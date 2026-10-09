@@ -1,6 +1,6 @@
 # 0.3.2: 配信中の操作と表示前プレビューを見分けやすくする
 
-2026-10-09（日本時間）。プレビューのページ送りを配信画面への操作と取り違えたフィードバックを受け、[#13](https://github.com/hekiruligames/jp-letters/issues/13)で追跡した。
+2026-10-09（日本時間）。プレビューのページ送りを配信画面への操作と取り違えたフィードバックを受け、[#11](https://github.com/hekiruligames/jp-letters-lua/issues/11)で追跡した。
 
 ## 画面と操作
 
@@ -29,7 +29,7 @@ Linux libobs 30.2.3の実OBS LuaJITと実Chromiumで、以下を含むWeb19項�
 
 製品ソースのSHA-256をテスト前後で照合し、配布ZIP生成時も照合した。[機械可読の結果](validation-v0.3.2.json)。テストは[`letters-e2e.mjs`](../tests/letters-e2e.mjs)と[`letters-integration.cpp`](../tests/letters-integration.cpp)に記録する。
 
-Mac・WindowsのOBS実機とSafariでの確認は今回の開発環境では行っていない。ネイティブの子ブラウザはテスト用の描画ソースで代用し、HTMLを別の実Chromiumで検証している。実機確認は[#10](https://github.com/hekiruligames/jp-letters/issues/10)に残す。
+Mac・WindowsのOBS実機とSafariでの確認は今回の開発環境では行っていない。ネイティブの子ブラウザはテスト用の描画ソースで代用し、HTMLを別の実Chromiumで検証している。実機確認は[#9](https://github.com/hekiruligames/jp-letters-lua/issues/9)に残す。
 
 ## 更新
 

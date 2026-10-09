@@ -1,6 +1,6 @@
 # 0.3.3: お便りをまとめて削除する
 
-2026-10-09（日本時間）。利用者から一括削除の方法を尋ねられ、0.3.2には1件削除しかないことを確認した。[#15](https://github.com/hekiruligames/jp-letters/issues/15)で追跡する。
+2026-10-09（日本時間）。利用者から一括削除の方法を尋ねられ、0.3.2には1件削除しかないことを確認した。[#12](https://github.com/hekiruligames/jp-letters-lua/issues/12)で追跡する。
 
 ## 使い方
 
@@ -30,7 +30,7 @@
 
 テスト前後と配布ZIPの製品ファイルのSHA-256を照合した。[機械可読の結果](validation-v0.3.3.json)。一括削除の検証は[`letters-e2e.mjs`](../tests/letters-e2e.mjs)に記録する。
 
-Mac・WindowsのOBS実機とSafariでの確認は今回の環境では行っていない。ネイティブ側の子ブラウザをテスト用の描画ソースで代用し、HTMLを別の実Chromiumで検証した。実機確認は[#10](https://github.com/hekiruligames/jp-letters/issues/10)で継続する。
+Mac・WindowsのOBS実機とSafariでの確認は今回の環境では行っていない。ネイティブ側の子ブラウザをテスト用の描画ソースで代用し、HTMLを別の実Chromiumで検証した。実機確認は[#9](https://github.com/hekiruligames/jp-letters-lua/issues/9)で継続する。
 
 ## 更新
 

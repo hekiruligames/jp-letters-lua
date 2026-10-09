@@ -36,7 +36,7 @@
 python3 tests/run-letters-tests.py /path/to/obs-sdk/usr /path/to/luajit/usr --artifacts /tmp/jp-letters-lifecycle --lifecycle-only
 ```
 
-今回の修正前後の実行はLinuxであり、Mac・WindowsのOBS実機は未検証。OBSのブラウザ子ソースはテスト用の描画ソースで代用し、HTMLは別の実Chromiumで検証した。Mac・Windows実機での確認は[Issue #10](https://github.com/hekiruligames/jp-letters/issues/10)に残している。
+今回の修正前後の実行はLinuxであり、Mac・WindowsのOBS実機は未検証。OBSのブラウザ子ソースはテスト用の描画ソースで代用し、HTMLは別の実Chromiumで検証した。Mac・Windows実機での確認は[Issue #9](https://github.com/hekiruligames/jp-letters-lua/issues/9)に残している。
 
 ## 更新方法
 
