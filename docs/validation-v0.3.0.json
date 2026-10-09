@@ -1,0 +1,70 @@
+{
+  "version": "0.3.0",
+  "license": "GPL-2.0-or-later",
+  "runtimeDependencies": "OBS built-in LuaJIT and browser source",
+  "checks": {
+    "passed": [
+      "queue operations preserve the aired snapshot; paragraph imports preserve blank lines",
+      "loopback API rejects missing credentials and foreign origins; sources remain independent",
+      "editing the next text or font leaves the current broadcast unchanged",
+      "long Japanese text fits actual font metrics; page breaks preserve all text and emoji clusters",
+      "small frames and long letters stay bounded; impossible padding yields a useful layout error",
+      "finish selects the next letter without airing it; reorder, delete and undo work",
+      "text file imports preserve paragraphs; malformed JSON and HTML-looking text are handled safely",
+      "backup export includes drafts and settings; restore keeps content and requires deliberate display",
+      "stale operation windows preserve conflicting input without overwriting; multiple sources have separate queues",
+      "host fonts populate the selector; private webfonts render real glyph metrics and valid TTC checksums; typing updates preview immediately; OS shortcut labels differ",
+      "right edge sets exactly 100% opacity without range padding; the editor hide button retains the draft",
+      "transparent preset changes only opacity and outline; reset restores display defaults and preserves letters, live text and UI theme",
+      "720p, 1080p and OBS canvas presets work; auto height fits short text and caps long letters without changing aired dimensions during prep",
+      "scroll mode retains all text; preview is independent; buttons, slider and real OBS hotkeys reach the last line without blanking",
+      "current blue and four pastel themes have readable contrast; custom UI colours are separate, backed up and compatible with old data",
+      "native OBS save/restore keeps state; render readiness and immediate hide remain correct",
+      "desktop and narrow layouts stay usable without horizontal overflow or browser errors"
+    ],
+    "runtime": "Linux libobs 30.2.3 + actual OBS LuaJIT + Chromium",
+    "caveat": "OBS browser API is a stand-in in the host; the HTML renderer is exercised in real Chromium. macOS and Windows runtimes are not run here.",
+    "native": [
+      "real OBS Lua source loads; loopback server, panel button and transparent output start",
+      "OBS scene save/restore preserves queue, draft, live snapshot and fonts",
+      "source destruction releases browser children, hotkeys and loopback sockets"
+    ],
+    "fontPolicy": {
+      "passed": [
+        "installable embedding exports a local font",
+        "preview/print embedding exports a local font",
+        "restricted embedding returns no font bytes",
+        "bitmap-only embedding returns no outline font bytes",
+        "missing embedding metadata returns no font bytes"
+      ],
+      "runtime": "Linux Fontconfig + LuaJIT"
+    }
+  },
+  "macOSRuntimeTested": false,
+  "windowsRuntimeTested": false,
+  "sha256": {
+    "jp-letters.lua": "890a383dbfd4e7c610111ccaebd81644c5264ad90ad641e0e2fdb85cf04a06d2",
+    "runtime/http.lua": "0b1dfb26dc64157502a86cbf01ff5753da97fda2d9f45a6676acca1232cbefe4",
+    "runtime/fonts.lua": "7c05f6d0932a8eb2151b7724c70b51ddee70d3756622c243ecd39120ce3d6fbf",
+    "runtime/webfonts.lua": "d443c942da74b41b2c4ff1a23ba6cb37be87a758d9198bbca06bf59761cf0523",
+    "web/control.html": "af6c225ff64617c88a97f334bbf4462612179897ead3d972bb9e5744731315d7",
+    "web/display.html": "c0fd53f2faa17e068dfc753a96918a89c11c5d4ec64b4ca4659e0aa8101b0c1e",
+    "web/core.js": "82f015ba65894b23e8fc0d0190e2f92805f2c9e329e2cdee103a1951c0297615",
+    "web/control.js": "aa02d8447e405e41e77a335d70cd22e7fc5a27d5870c9430c4a366b04772d522",
+    "web/display.js": "ecb0e543683bbe40a1a047404da61c1fb411434b3c75acc4cda358b6be8566f1",
+    "web/themes.js": "665a58ae9905738b716f319505eba4f29df755aa67a1eb1ac751b3675b4d750a",
+    "web/style.css": "60ef92c3be3f0f834224f38949353d18bd3970405c19c91b14c479e0314e1e53",
+    "package.json": "cd79ba9231c601fede6fa15ae0cf304ce1c94226a42264cc7e76bf3052d16d70",
+    "README.md": "447e66097a850339f93d71746fde51b48614900b6dbc6f5961318e0f3e29d4f5",
+    "はじめに.txt": "a1b5bdc832378292e4ce4eff6898f7a41e99793a00aee3c90ab700ec04d1cfea",
+    "samples/お便りサンプル.txt": "3a2fa12cf72c5f96a8b5034e4a05b0567f8518806f5a3e0398f447aa151bd0aa",
+    "LICENSE": "90b664a6fbc82b38595cbb39606268bef0b2eb9b76b0e9e03826befe204190bb"
+  },
+  "releaseSHA256": "6bbd29a6d08178ce5be51275597e4305914b0ee72590db843cf0fea97fda290a",
+  "pixelChecks": {
+    "frame": "960x540",
+    "transparentPadding": 40,
+    "paddingAlpha": 0,
+    "opaqueCardAlpha": 255
+  }
+}

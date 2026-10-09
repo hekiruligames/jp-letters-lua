@@ -1,11 +1,13 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Shared state operations and layout for both the operator preview and OBS.
+import {normalizeUI} from './themes.js';
 export const DEFAULT_STYLE = Object.freeze({
   width: 960, height: 540, font: 'Yu Gothic', fontSize: 48, lineHeight: 1.5,
   padding: { top: 40, right: 40, bottom: 40, left: 40 }, innerPadding: 24,
-  textColor: '#ffffff', outlineColor: '#101827', outlineWidth: 0,
-  background: '#172437', backgroundOpacity: .94, radius: 24,
+  textColor: '#222222', outlineColor: '#101827', outlineWidth: 0,
+  background: '#ffffff', backgroundOpacity: 1, radius: 24,
   align: 'left', verticalAlign: 'center', showTitle: false, showPageNumber: true,
+  readingMode: 'pages', autoHeight: false,
 });
 export const clone = value => JSON.parse(JSON.stringify(value));
 const bounded = (value, fallback, min, max) => Number.isFinite(Number(value))
@@ -37,6 +39,7 @@ export function normalizeStyle(input = {}) {
     align: ['left', 'center', 'right'].includes(s.align) ? s.align : d.align,
     verticalAlign: ['top', 'center', 'bottom'].includes(s.verticalAlign) ? s.verticalAlign : d.verticalAlign,
     showTitle: !!s.showTitle, showPageNumber: s.showPageNumber !== false,
+    readingMode: s.readingMode === 'scroll' ? 'scroll' : 'pages', autoHeight: !!s.autoHeight,
   };
 }
 
@@ -58,9 +61,10 @@ export function normalizeState(input = {}) {
   }
   const result = {version: 1, items, selectedId: ids.has(input.selectedId) ? input.selectedId : null,
     draft: {id: ids.has(rawDraft.id) ? rawDraft.id : null, title: text(rawDraft.title).slice(0, 100), text: text(rawDraft.text)},
-    style, live: {visible: !!rawLive.visible && !!text(rawLive.text).trim(), id: rawLive.id || null,
+    style, ui: normalizeUI(input.ui), live: {visible: !!rawLive.visible && !!text(rawLive.text).trim(), id: rawLive.id || null,
       title: text(rawLive.title).slice(0, 100), text: text(rawLive.text),
-      page: Math.round(bounded(rawLive.page, 0, 0, 9999)), style: rawLive.style ? normalizeStyle(rawLive.style) : null}};
+      page: Math.round(bounded(rawLive.page, 0, 0, 9999)), scroll: bounded(rawLive.scroll, 0, 0, 1),
+      style: rawLive.style ? normalizeStyle(rawLive.style) : null}};
   if (new TextEncoder().encode(JSON.stringify(result)).length > 800000) {
     throw new Error('一覧のデータが大きくなっています。バックアップを書き出し、お便りを配信ごとに分けてください。');
   }
@@ -93,11 +97,11 @@ export function selectItem(state, id) {
 export function newDraft(state) {
   saveDraft(state); state.selectedId = null; state.draft = {id: null, title: '', text: ''}; return state;
 }
-export function showDraft(state) {
+export function showDraft(state, liveStyle = state.style) {
   if (!state.draft.text.trim()) throw new Error('表示するお便りの本文を入力してください。');
   saveDraft(state);
   state.live = {visible: true, id: state.draft.id, text: state.draft.text, title: state.draft.title,
-    page: 0, style: clone(state.style)};
+    page: 0, scroll: 0, style: clone(liveStyle)};
   return state;
 }
 export function finishLive(state) {
@@ -124,6 +128,13 @@ export function removeItem(state, id) {
   return state;
 }
 export const label = item => item.title || item.text.replace(/\s+/g, ' ').slice(0, 28) || '新しいお便り';
+
+export function applyDisplayPreset(style, name) {
+  if (name === 'clear') { style.backgroundOpacity = 0; style.outlineWidth = 8; }
+  else Object.assign(style, name === 'maro' ? {background: '#fff4f8', backgroundOpacity: 1, textColor: '#50333e', outlineWidth: 0} :
+    {background: '#ffffff', backgroundOpacity: 1, textColor: '#222222', outlineWidth: 0});
+  return style;
+}
 
 export function importText(input) {
   const value = text(input).replace(/^\uFEFF/, '');
@@ -154,9 +165,52 @@ function graphemes(value) {
 const noStart = /^[、。，．・：；？！ー〜～）〕］｝〉》」』】〙〗’”»ぁぃぅぇぉっゃゅょゎァィゥェォッャュョヮヵヶ]/u;
 const noEnd = /[（〔［｛〈《「『【〘〖‘“«]$/u;
 const pageCache = new Map();
+const fontFaces = new Map();
+let fontSequence = 0;
+
+export function fontStatus(family) { return fontFaces.get(family)?.status || {loaded: false, pending: true}; }
+async function ensureFont(family) {
+  if (fontFaces.has(family)) return fontFaces.get(family).promise;
+  const entry = {status: {loaded: false, pending: true}, face: null};
+  fontFaces.set(family, entry);
+  entry.promise = (async () => {
+    try {
+      const token = new URLSearchParams(location.search).get('token');
+      const started = Date.now();
+      let response;
+      do {
+        response = await fetch(`/api/font?name=${encodeURIComponent(family)}`, {
+          headers: {'X-OBS-Letters-Token': token || ''}, cache: 'no-store', signal: deadlineSignal(15000)});
+        if (response.status === 202) {
+          if (Date.now() - started > 20000) throw new Error('フォントの読み込みに時間がかかっています。');
+          await response.text(); await new Promise(resolve => setTimeout(resolve, 100));
+        }
+      } while (response.status === 202);
+      if (!response.ok) throw new Error(await response.text());
+      const alias = `jp-letters-font-${++fontSequence}`;
+      const face = new FontFace(alias, await response.arrayBuffer(), {weight: '500'});
+      await face.load(); document.fonts.add(face); entry.face = face;
+      entry.status = {loaded: true, pending: false, alias};
+    } catch (error) {
+      entry.status = {loaded: false, pending: false, reason: error.message};
+    }
+    if (fontFaces.size > 8) {
+      for (const [name, old] of fontFaces) {
+        if (name !== family && !old.status.pending) {
+          if (old.face) document.fonts.delete(old.face);
+          fontFaces.delete(name);
+          if (fontFaces.size <= 8) break;
+        }
+      }
+    }
+    return entry.status;
+  })();
+  return entry.promise;
+}
 
 function fontStack(style) {
-  return `"${style.font.replace(/["\\]/g, '')}", "Yu Gothic", YuGothic, "Noto Sans CJK JP", sans-serif`;
+  const alias = fontStatus(style.font).alias;
+  return `${alias ? `"${alias}", ` : ''}"${style.font.replace(/[\x00-\x1f\x7f"\\]/g, '')}", "Yu Gothic", YuGothic, "Noto Sans CJK JP", sans-serif`;
 }
 function rgba(hex, opacity) {
   return `rgba(${parseInt(hex.slice(1, 3), 16)}, ${parseInt(hex.slice(3, 5), 16)}, ${parseInt(hex.slice(5, 7), 16)}, ${opacity})`;
@@ -177,14 +231,42 @@ function styleText(node, style) {
     WebkitTextStroke: `${style.outlineWidth}px ${style.outlineColor}`, paintOrder: 'stroke fill'});
 }
 
+const metricsCache = new Map();
+async function measureText(content, style) {
+  await ensureFont(style.font);
+  const g = geometry(style), key = JSON.stringify([content, g.width, fontStack(style), style.fontSize, style.lineHeight, style.outlineWidth]);
+  if (g.width < style.fontSize) throw new Error('文字を置く領域が足りません。枠を広げるか、余白・文字サイズを小さくしてください。');
+  if (metricsCache.has(key)) return metricsCache.get(key);
+  await document.fonts.load(`500 ${style.fontSize}px ${fontStack(style)}`, content.slice(0, 100) || '日本語');
+  const measure = document.createElement('div'); measure.className = 'letter-text letter-measure';
+  styleText(measure, style); measure.style.width = `${g.width}px`; measure.textContent = content;
+  document.body.append(measure);
+  const result = {height: measure.getBoundingClientRect().height, width: measure.scrollWidth}; measure.remove();
+  if (metricsCache.size >= 40) metricsCache.delete(metricsCache.keys().next().value);
+  metricsCache.set(key, result); return result;
+}
+
+export async function prepareStyle(content, rawStyle) {
+  const style = normalizeStyle(rawStyle);
+  await ensureFont(style.font);
+  if (!style.autoHeight || !content.trim()) return style;
+  const metrics = await measureText(content, style), g = geometry(style);
+  const desired = Math.ceil(metrics.height + style.padding.top + style.padding.bottom + 2 * style.innerPadding +
+    2 * style.outlineWidth + g.header + g.footer);
+  style.height = Math.min(style.height, Math.max(180, desired));
+  return style;
+}
+
 export async function paginate(content, rawStyle, {signal} = {}) {
-  const style = normalizeStyle(rawStyle), key = JSON.stringify([content, style]);
+  const style = normalizeStyle(rawStyle);
+  await ensureFont(style.font);
+  const key = JSON.stringify([content, style, fontStack(style)]);
   if (pageCache.has(key)) return pageCache.get(key);
   const g = geometry(style);
   if (g.width < style.fontSize || g.height < style.fontSize * style.lineHeight) {
     throw new Error('文字を置く領域が足りません。枠を広げるか、余白・文字サイズを小さくしてください。');
   }
-  await document.fonts.load(`${style.fontSize}px ${fontStack(style)}`, content.slice(0, 100) || '日本語');
+  await document.fonts.load(`500 ${style.fontSize}px ${fontStack(style)}`, content.slice(0, 100) || '日本語');
   const measure = document.createElement('div');
   measure.className = 'letter-text letter-measure';
   styleText(measure, style);
@@ -241,10 +323,16 @@ export async function paginate(content, rawStyle, {signal} = {}) {
 }
 
 export async function renderLetter(host, value, rawStyle, page = 0, options = {}) {
-  const style = normalizeStyle(rawStyle), content = text(value.text), pages = await paginate(content, style, options);
+  const content = text(value.text), style = options.prepared ? normalizeStyle(rawStyle) : await prepareStyle(content, rawStyle);
+  await ensureFont(style.font);
+  const pages = style.readingMode === 'scroll' ? [content] : await paginate(content, style, options);
   const index = Math.min(pages.length - 1, Math.max(0, page)), g = geometry(style);
+  if (g.height < style.fontSize * style.lineHeight) throw new Error('文字を置く領域が足りません。枠を広げるか、余白・文字サイズを小さくしてください。');
+  const metrics = style.readingMode === 'scroll' ? await measureText(content, style) : null;
+  const scrollMax = metrics ? Math.max(0, metrics.height - g.height) : 0;
   const frame = document.createElement('div'); frame.className = 'letter-frame';
   frame.style.width = `${style.width}px`; frame.style.height = `${style.height}px`;
+  frame.dataset.scrollMax = String(scrollMax);
   const card = document.createElement('div'); card.className = 'letter-card';
   Object.assign(card.style, {left: `${style.padding.left}px`, top: `${style.padding.top}px`,
     width: `${g.cardWidth}px`, height: `${g.cardHeight}px`, padding: `${style.innerPadding}px`,
@@ -257,14 +345,26 @@ export async function renderLetter(host, value, rawStyle, page = 0, options = {}
   }
   const viewport = document.createElement('div'); viewport.className = 'letter-viewport';
   viewport.style.height = `${g.height + 2 * style.outlineWidth}px`;
-  viewport.style.justifyContent = {top: 'flex-start', center: 'center', bottom: 'flex-end'}[style.verticalAlign];
+  viewport.style.justifyContent = scrollMax > 0 ? 'flex-start' : {top: 'flex-start', center: 'center', bottom: 'flex-end'}[style.verticalAlign];
+  if (style.readingMode === 'scroll') viewport.classList.add('scroll-mode');
   const body = document.createElement('div'); body.className = 'letter-text'; styleText(body, style);
   body.style.margin = `${style.outlineWidth}px`; body.textContent = pages[index]; viewport.append(body); card.append(viewport);
   if (style.showPageNumber) {
     const footer = document.createElement('div'); footer.className = 'letter-footer';
-    footer.textContent = pages.length > 1 ? `${index + 1} / ${pages.length}` : '';
+    footer.textContent = style.readingMode === 'scroll' && scrollMax > 0 ? `${Math.round((value.scroll || 0) * 100)}%` :
+      pages.length > 1 ? `${index + 1} / ${pages.length}` : '';
     footer.style.height = `${g.footer}px`; card.append(footer);
   }
   frame.append(card); host.replaceChildren(frame);
-  return {pages, page: index, frame};
+  if (style.readingMode === 'scroll') setScroll(frame, value.scroll || 0, false);
+  return {pages, page: index, frame, style, scrollMax, viewportHeight: g.height};
+}
+
+export function setScroll(frame, position, smooth = true) {
+  const body = frame.querySelector('.letter-text'), maximum = Number(frame.dataset.scrollMax) || 0;
+  const fraction = bounded(position, 0, 0, 1);
+  body.style.transition = smooth && !matchMedia('(prefers-reduced-motion: reduce)').matches ? 'transform 180ms ease-out' : 'none';
+  body.style.transform = `translateY(${-maximum * fraction}px)`;
+  const footer = frame.querySelector('.letter-footer');
+  if (footer) footer.textContent = maximum > 0 ? `${Math.round(fraction * 100)}%` : '';
 }

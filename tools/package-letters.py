@@ -10,8 +10,8 @@ import zipfile
 
 ROOT = Path(__file__).resolve().parent.parent
 FILES = (
-    "jp-letters.lua", "runtime/http.lua", "web/control.html", "web/display.html",
-    "web/core.js", "web/control.js", "web/display.js", "web/style.css",
+    "jp-letters.lua", "runtime/http.lua", "runtime/fonts.lua", "runtime/webfonts.lua", "web/control.html", "web/display.html",
+    "web/core.js", "web/control.js", "web/display.js", "web/themes.js", "web/style.css",
     "package.json", "README.md", "はじめに.txt", "samples/お便りサンプル.txt",
 )
 
@@ -30,9 +30,10 @@ def main():
     parser.add_argument("--validation", type=Path, required=True, help="A successful letters test artifact directory")
     args = parser.parse_args()
     validation = json.loads((args.validation / "results.json").read_text(encoding="utf-8"))
+    font_policy = json.loads((args.validation / "font-policy.json").read_text(encoding="utf-8"))
     native_log = (args.validation / "native.log").read_text(encoding="utf-8")
     native_checks = [line.split("PASS: ", 1)[1] for line in native_log.splitlines() if "PASS: " in line]
-    if len(validation["passed"]) < 11 or len(native_checks) < 3 or "FAIL:" in native_log:
+    if len(validation["passed"]) < 17 or len(font_policy["passed"]) < 5 or len(native_checks) < 3 or "FAIL:" in native_log:
         raise SystemExit("Successful web and native lifecycle checks are required before packaging")
     version = json.loads((ROOT / "letters/package.json").read_text(encoding="utf-8"))["version"]
     top = f"jp-letters-{version}"
@@ -42,7 +43,7 @@ def main():
     assets["LICENSE"] = (ROOT / "LICENSE").read_bytes()
     manifest = {"version": version, "license": "GPL-2.0-or-later",
                 "runtimeDependencies": "OBS built-in LuaJIT and browser source",
-                "checks": {**validation, "native": native_checks},
+                "checks": {**validation, "native": native_checks, "fontPolicy": font_policy},
                 "macOSRuntimeTested": False, "windowsRuntimeTested": False,
                 "sha256": {name: hashlib.sha256(data).hexdigest() for name, data in assets.items()}}
     with zipfile.ZipFile(release, "w") as archive:

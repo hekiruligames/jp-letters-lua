@@ -4,6 +4,7 @@ import fs from 'node:fs/promises';
 import path from 'node:path';
 import {createRequire} from 'node:module';
 import {importText, normalizeState, newDraft, showDraft, moveItem, removeItem, selectItem} from '../letters/web/core.js';
+import {UI_THEMES, contrast} from '../letters/web/themes.js';
 const {chromium} = createRequire(import.meta.url)('playwright');
 const artifacts = process.argv[2];
 const connection = JSON.parse(await fs.readFile(path.join(artifacts, 'connection.json'), 'utf8'));
@@ -36,6 +37,8 @@ try {
   pass('queue operations preserve the aired snapshot; paragraph imports preserve blank lines');
 
   assert.equal((await fetch(`${origin}/api/sources`)).status, 403);
+  assert.equal((await fetch(`${origin}/api/font?name=DejaVu%20Sans`)).status, 403);
+  assert.equal((await fetch(`${origin}/api/font?name=${encodeURIComponent('/etc/passwd')}`, {headers: auth})).status, 404);
   assert.equal((await fetch(`${origin}/api/sources`, {headers: {...auth, Origin: 'https://example.com'}})).status, 403);
   assert.equal((await fetch(`${origin}/runtime/http.lua`, {headers: auth})).status, 404);
   const sources = await (await fetch(`${origin}/api/sources`, {headers: auth})).json(); assert.equal(sources.sources.length, 2);
@@ -150,6 +153,150 @@ try {
   assert.equal(await stalePanel.locator('#draft-title').inputValue(), '競合した画面の未保存入力');
   await stalePanel.close();
   pass('stale operation windows preserve conflicting input without overwriting; multiple sources have separate queues');
+
+  const environment = await (await fetch(`${origin}/api/environment`, {headers: auth})).json();
+  const families = await (await fetch(`${origin}/api/fonts`, {headers: auth})).json();
+  assert.equal(environment.canvasWidth, 1920); assert.equal(environment.canvasHeight, 1080);
+  assert.equal(families.error, ''); assert(families.fonts.length > 2);
+  await page.locator('#draft-text').fill('短いお便りです。'); await saved();
+  const fontBefore = (await get()).state.style.font, liveBeforeFont = structuredClone((await get()).state.live);
+  await page.locator('#font').selectOption('__custom__'); await page.locator('#font-custom').fill('DejaVu Sans Mono');
+  await until(async () => page.evaluate(async () => {
+    const Core = await import('/core.js'), status = Core.fontStatus('DejaVu Sans Mono');
+    return status.loaded && document.querySelector('#preview-host .letter-text')?.style.fontFamily.includes(status.alias);
+  }), 'font typing did not update preview without blur');
+  const webfont = await page.evaluate(async () => {
+    const Core = await import('/core.js'), alias = Core.fontStatus('DejaVu Sans Mono').alias;
+    const canvas = document.createElement('canvas'), c = canvas.getContext('2d');
+    c.font = `500 48px "${alias}"`; const narrow = c.measureText('iiii').width, wide = c.measureText('WWWW').width;
+    c.font = '500 48px sans-serif'; const fallback = [c.measureText('iiii').width, c.measureText('WWWW').width];
+    return {loaded: [...document.fonts].some(face => face.family === alias && face.status === 'loaded'), narrow, wide, fallback};
+  });
+  assert(webfont.loaded); assert(Math.abs(webfont.narrow - webfont.wide) < .01);
+  assert(Math.abs(webfont.fallback[0] - webfont.fallback[1]) > 10, 'the font test must detect fallback rendering');
+  let exportedFont;
+  await until(async () => {
+    exportedFont = await fetch(`${origin}/api/font?name=${encodeURIComponent(environment.defaultFont)}`, {headers: auth});
+    if (exportedFont.status === 202) { await exportedFont.text(); return false; }
+    return true;
+  }, 'font export did not finish');
+  assert.equal(exportedFont.status, 200);
+  const fontBytes = new Uint8Array(await exportedFont.arrayBuffer()), data = new DataView(fontBytes.buffer);
+  let checksum = 0;
+  for (let offset = 0; offset < fontBytes.length; offset += 4) checksum = (checksum + data.getUint32(offset)) >>> 0;
+  assert.equal(checksum, 0xb1b0afba, 'the extracted TTC face must retain a valid SFNT checksum');
+  assert(['OTTO', '\x00\x01\x00\x00'].includes(Buffer.from(fontBytes.slice(0, 4)).toString('latin1')));
+  assert.equal(await page.locator('#font-custom').evaluate(node => node === document.activeElement), true);
+  await saved(); assert.deepEqual((await get()).state.live, liveBeforeFont);
+  await page.locator('#font').selectOption(fontBefore); await saved();
+  const macPage = await context.newPage(); await macPage.addInitScript(() => Object.defineProperty(navigator, 'platform', {get: () => 'MacIntel'}));
+  await macPage.goto(connection.control); await macPage.locator('#app').waitFor({state: 'visible'});
+  assert.equal(await macPage.locator('#show-shortcut').textContent(), 'Option ↵'); await macPage.close();
+  assert.equal(await page.locator('#show-shortcut').textContent(), 'Alt ↵');
+  pass('host fonts populate the selector; private webfonts render real glyph metrics and valid TTC checksums; typing updates preview immediately; OS shortcut labels differ');
+
+  await page.getByText('カードと表示する情報', {exact: true}).click();
+  await page.locator('#backgroundOpacity').focus(); await page.locator('#backgroundOpacity').press('Home'); await saved();
+  assert.equal((await get()).state.style.backgroundOpacity, 0);
+  const range = await page.locator('#backgroundOpacity').boundingBox();
+  await page.mouse.click(range.x + range.width - 1, range.y + range.height / 2); await saved();
+  assert.equal(await page.locator('#backgroundOpacity').inputValue(), '100');
+  assert.equal((await get()).state.style.backgroundOpacity, 1);
+  assert.equal(await page.locator('#backgroundOpacity').evaluate(node => getComputedStyle(node).paddingRight), '0px');
+  assert.equal(await page.locator('#opacity-value').textContent(), '100%');
+  await page.locator('#show-letter').click(); await saved();
+  await until(async () => (await display.locator('.letter-card').evaluate(node => getComputedStyle(node).backgroundColor)).endsWith(', 255, 255)'), 'opaque white card not rendered');
+  await display.setViewportSize({width: 960, height: 540});
+  await display.screenshot({path: path.join(artifacts, 'opaque-card.png'), omitBackground: true});
+  const draftBeforeHide = (await get()).state.draft.text;
+  await page.locator('#hide-editor').click(); await saved(); await until(async () => !(await stats()).visible, 'editor hide did not reach OBS');
+  assert.equal((await get()).state.draft.text, draftBeforeHide);
+  pass('right edge sets exactly 100% opacity without range padding; the editor hide button retains the draft');
+
+  const beforeClear = (await get()).state.style;
+  await page.locator('[data-theme="clear"]').click(); await saved();
+  assert.deepEqual((await get()).state.style, {...beforeClear, backgroundOpacity: 0, outlineWidth: 8});
+  await page.locator('[data-theme="maro"]').click(); await saved(); assert.equal((await get()).state.style.background, '#fff4f8');
+  await page.locator('#ui-theme-open').click(); await page.locator('[data-ui-theme="sakura"]').click(); await saved();
+  await page.locator('#ui-theme-dialog').getByText('閉じる', {exact: true}).click();
+  const beforeReset = (await get()).state;
+  await page.locator('#reset-style').click(); await saved();
+  const reset = (await get()).state;
+  assert.deepEqual(reset.items, beforeReset.items); assert.deepEqual(reset.draft, beforeReset.draft);
+  assert.deepEqual(reset.live, beforeReset.live); assert.deepEqual(reset.ui, beforeReset.ui);
+  assert.equal(reset.style.font, environment.defaultFont); assert.equal(reset.style.width, 960); assert.equal(reset.style.height, 540);
+  assert.equal(reset.style.background, '#ffffff'); assert.equal(reset.style.textColor, '#222222');
+  pass('transparent preset changes only opacity and outline; reset restores display defaults and preserves letters, live text and UI theme');
+
+  await page.locator('[data-frame="1280,720"]').click(); await saved();
+  assert.equal((await get()).state.style.height, 720); assert.equal((await get()).state.style.width, 1280);
+  await page.locator('[data-frame="1920,1080"]').click(); await saved(); assert.equal((await get()).state.style.height, 1080);
+  await page.locator('#obs-frame').click(); await saved(); assert.equal((await get()).state.style.width, environment.canvasWidth);
+  await page.locator('[data-frame="960,540"]').click(); await page.locator('#auto-height').click(); await saved();
+  await until(async () => (await page.locator('#preview-size').textContent()).includes('（自動）'), 'auto height preview not resolved');
+  const shortHeight = await page.locator('#preview-host .letter-frame').evaluate(node => Number.parseFloat(node.style.height));
+  assert(shortHeight >= 180 && shortHeight < 540);
+  await page.locator('#show-letter').click(); await saved();
+  await until(async () => (await stats()).height === shortHeight && (await stats()).visible, 'native source did not take the fitted height');
+  assert.equal(await display.locator('.letter-frame').evaluate(node => Number.parseFloat(node.style.height)), shortHeight);
+  const scrollingText = '最初の段落。\n\n' + '長いお便りをスクロールで読みます。改行と日本語の折り返しをそのまま残します。\n'.repeat(18) + '\n最後の行です。';
+  await page.locator('#draft-text').fill(scrollingText); await saved();
+  assert.equal((await stats()).height, shortHeight);
+  await page.locator('#show-letter').click(); await saved();
+  await until(async () => (await stats()).height === 540 && (await stats()).visible, 'long letter exceeded auto-height limit');
+  pass('720p, 1080p and OBS canvas presets work; auto height fits short text and caps long letters without changing aired dimensions during prep');
+
+  await page.locator('#readingMode').selectOption('scroll'); await saved();
+  assert.equal((await get()).state.live.style.readingMode, 'pages');
+  await page.locator('#show-letter').click(); await saved();
+  await until(async () => (await get()).scrollMax > 0 && (await get()).renderedLiveRevision === (await get()).liveRevision, 'scroll layout not acknowledged');
+  await until(async () => (await display.locator('.letter-text').textContent()) === scrollingText, 'scroll mode lost text');
+  const scrollRevision = (await get()).liveRevision;
+  await page.locator('#preview-scroll').focus(); await page.locator('#preview-scroll').press('End');
+  assert.equal((await get()).state.live.scroll, 0);
+  await page.locator('#live-next').click(); await saved();
+  const firstScroll = (await get()).state.live.scroll; assert(firstScroll > 0 && firstScroll < 1);
+  assert.equal((await get()).liveRevision, scrollRevision); assert.equal((await stats()).visible, true);
+  await fs.writeFile(path.join(artifacts, 'hotkey.request'), 'next');
+  await until(async () => (await get()).state.live.scroll > firstScroll, 'OBS hotkey did not scroll down');
+  await until(async () => (await page.locator('#live-scroll').inputValue()) === String(Math.round((await get()).state.live.scroll * 1000)), 'panel did not catch hotkey scroll');
+  await page.locator('#live-scroll').focus(); await page.locator('#live-scroll').press('End'); await saved();
+  await until(async () => (await get()).state.live.scroll === 1, 'scroll did not reach the last line');
+  await until(async () => await display.locator('.letter-frame').evaluate(node => {
+    const body = node.querySelector('.letter-text').getBoundingClientRect(), viewport = node.querySelector('.letter-viewport').getBoundingClientRect();
+    return Math.abs(body.bottom - viewport.bottom) < 1;
+  }), 'last line was not aligned inside the viewport');
+  assert.equal((await get()).liveRevision, scrollRevision);
+  pass('scroll mode retains all text; preview is independent; buttons, slider and real OBS hotkeys reach the last line without blanking');
+
+  for (const theme of Object.values(UI_THEMES)) {
+    assert(contrast(theme.text, theme.panel) >= 4.5); assert(contrast(theme.text, theme.background) >= 4.5);
+    assert(contrast(theme.accent, '#ffffff') >= 4.5);
+  }
+  const liveBeforeUI = structuredClone((await get()).state.live);
+  await page.locator('#ui-theme-open').click();
+  for (const preset of Object.keys(UI_THEMES)) {
+    await page.locator(`[data-ui-theme="${preset}"]`).click(); await saved(); assert.equal((await get()).state.ui.preset, preset);
+    const applied = await page.evaluate(() => {
+      const root = getComputedStyle(document.documentElement);
+      return Object.fromEntries(['ink', 'soft', 'muted', 'panel', 'line'].map(key => [key, root.getPropertyValue(`--${key}`).trim()]));
+    });
+    assert(contrast(applied.ink, applied.soft) >= 4.5); assert(contrast(applied.muted, applied.panel) >= 4.5);
+    assert(contrast(applied.line, applied.panel) < 1.5, 'panel borders should remain subtle');
+  }
+  await page.locator('#ui-accent').fill('#8233b9'); await page.locator('#ui-accent').dispatchEvent('input'); await saved();
+  assert.equal((await get()).state.ui.preset, 'custom'); assert.equal((await get()).state.ui.custom.accent, '#8233b9');
+  assert.deepEqual((await get()).state.live, liveBeforeUI);
+  await page.screenshot({path: path.join(artifacts, 'theme-custom.png'), fullPage: true});
+  await page.locator('#ui-theme-dialog').getByText('閉じる', {exact: true}).click();
+  const fullDownload = page.waitForEvent('download'); await page.locator('#export').click();
+  const fullBackup = JSON.parse(await fs.readFile(await (await fullDownload).path(), 'utf8'));
+  assert.deepEqual(fullBackup.ui, (await get()).state.ui); assert.equal(fullBackup.style.readingMode, 'scroll');
+  const migrated = normalizeState({version: 1, items: [], style: {font: 'YuGothic', background: '#172437', backgroundOpacity: .94, textColor: '#ffffff'}});
+  assert.equal(migrated.ui.preset, 'blue'); assert.equal(migrated.style.background, '#172437'); assert.equal(migrated.style.readingMode, 'pages');
+  await page.locator('#ui-theme-open').click(); await page.locator('[data-ui-theme="blue"]').click(); await saved();
+  await page.locator('#ui-theme-dialog').getByText('閉じる', {exact: true}).click(); await page.locator('#reset-style').click(); await saved();
+  pass('current blue and four pastel themes have readable contrast; custom UI colours are separate, backed up and compatible with old data');
 
   await page.locator('#fontSize').fill('48'); await page.locator('#fontSize').dispatchEvent('change');
   await page.locator('#draft-title').fill('ゲーム選びのお便り'); await page.locator('#draft-text').fill('初めて遊ぶ人におすすめのゲームはありますか？\n\n最近の配信で楽しかった場面も、ぜひ教えてください。');
