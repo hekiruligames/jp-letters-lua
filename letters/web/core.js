@@ -122,8 +122,12 @@ export function moveItem(state, id, destination) {
   return state;
 }
 export function removeItem(state, id) {
-  state.items = state.items.filter(item => item.id !== id);
-  if (state.draft.id === id) { state.draft = {id: null, title: '', text: ''}; state.selectedId = null; }
+  return removeItems(state, [id]);
+}
+export function removeItems(state, ids) {
+  const targets = new Set(ids);
+  state.items = state.items.filter(item => !targets.has(item.id));
+  if (targets.has(state.draft.id)) { state.draft = {id: null, title: '', text: ''}; state.selectedId = null; }
   // The aired text is an independent snapshot; deleting a queue item doesn't replace it.
   return state;
 }

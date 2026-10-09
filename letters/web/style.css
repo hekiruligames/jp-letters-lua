@@ -89,7 +89,9 @@ h2 {font-size:14px; font-weight:700;}
 .queue-item.drop-target {border-color:var(--accent);}
 .queue-empty {padding:22px 20px 32px; font-size:12px; line-height:1.9; color:var(--muted);}
 .queue-tools {display:flex; gap:5px; padding:12px 14px 6px; border-top:1px solid var(--line);}.queue-tools button {flex:1;}
-.queue-footer {display:flex; justify-content:space-between; padding:4px 15px 12px;}
+.queue-delete-actions {display:grid; grid-template-columns:1fr 1fr; gap:6px; padding:6px 14px;}
+.queue-delete-actions button {font-size:11px; padding:7px 4px;}
+.queue-footer {display:flex; justify-content:flex-end; padding:4px 15px 12px;}
 .import-menu {margin:0 14px 12px; border:1px solid var(--line); border-radius:8px;}
 summary {cursor:pointer; font-weight:600; font-size:12px; padding:11px 12px;}
 .import-menu>div {display:grid; gap:5px; padding:0 8px 8px;}.import-menu button {font-size:11px; text-align:left; border:0; font-weight:400;}
@@ -169,4 +171,23 @@ dialog textarea {height:240px;}code {font-family:monospace; background:var(--sof
 .ui-custom {display:grid; grid-template-columns:1fr 1fr; gap:12px;}
 .ui-custom label {display:grid; gap:6px; font-size:12px;}
 .letter-viewport.scroll-mode {overflow:hidden;}
+#delete-dialog {max-height:calc(100vh - 32px); overflow:auto;}
+.delete-scope-label {display:block; font-size:12px; font-weight:600; margin:20px 0 7px;}
+.delete-selection-tools {display:flex; align-items:center; gap:6px; flex-wrap:wrap; margin:13px 0 9px;}
+.delete-selection-tools>span {font-size:11px; color:var(--muted); margin-right:auto;}
+.delete-selection-tools button {font-size:11px;}
+.delete-list {list-style:none; padding:0; margin:13px 0 0; max-height:290px; overflow:auto; border:1px solid var(--line); border-radius:8px;}
+.delete-list li+li {border-top:1px solid var(--line);}
+.delete-item {display:flex; align-items:flex-start; gap:11px; padding:12px; cursor:pointer;}
+.delete-item:has(input:disabled) {cursor:default;}
+.delete-item:has(input:checked) {background:var(--soft);}
+.delete-item input {margin-top:3px;}.delete-item>span:first-of-type {min-width:0; flex:1;}
+.delete-item strong {display:block; font-size:12px; line-height:1.7; overflow-wrap:anywhere;}
+.delete-snippet {font-size:11px; line-height:1.7; color:var(--muted); display:-webkit-box; -webkit-line-clamp:2; -webkit-box-orient:vertical; overflow:hidden; overflow-wrap:anywhere;}
+.delete-done {font-size:10px; color:var(--muted); white-space:nowrap; padding-top:3px;}
+#delete-dialog .delete-empty {padding:20px; text-align:center; background:var(--soft); border-radius:8px;}
+#delete-dialog .delete-help {font-size:11px; margin-bottom:8px;}
+#delete-dialog .delete-draft-note {font-size:11px; font-weight:600; color:#9d2d43; margin:8px 0;}
+.delete-footer {display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin-top:17px;}
+#delete-count {font-size:13px; font-weight:700; margin-right:auto;}.delete-footer .dialog-actions {margin-top:0; flex-wrap:wrap;}
 @media(max-width:680px) {.header-tools {justify-content:flex-start;gap:8px;}.connection {width:100%;}.editor-actions {width:100%;justify-content:flex-start;}.preview-bottom {flex-wrap:wrap;}#preview-info {max-width:100%;}.preview-navigation {margin-left:auto;}.ui-theme-presets {grid-template-columns:1fr;}}

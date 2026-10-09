@@ -33,7 +33,8 @@
         <div class="filters" role="group" aria-label="一覧の絞り込み"><button data-filter="all" aria-pressed="true">すべて</button><button data-filter="unread" aria-pressed="false">未紹介</button><button data-filter="done" aria-pressed="false">紹介済み</button></div>
         <ol id="queue-list" class="queue-list"></ol><p id="queue-empty" class="queue-empty">マシュマロの本文を貼り付けて、最初のお便りを準備しましょう。</p>
         <div class="queue-tools"><button id="move-up" class="small" aria-label="選択中のお便りを上へ">↑ 上へ</button><button id="move-down" class="small" aria-label="選択中のお便りを下へ">↓ 下へ</button><button id="toggle-done" class="small">紹介済み</button></div>
-        <div class="queue-footer"><button id="delete-letter" class="text-button">削除</button><button id="undo" class="text-button" disabled>一覧の操作を戻す</button></div>
+        <div class="queue-delete-actions"><button id="delete-letter" class="small danger-soft">選択中の1件を削除</button><button id="delete-bulk-open" class="small" aria-haspopup="dialog">まとめて削除</button></div>
+        <div class="queue-footer"><button id="undo" class="text-button" disabled>一覧の操作を戻す</button></div>
         <details class="import-menu"><summary>取り込み・バックアップ</summary><div><button id="bulk-open">まとめて貼り付け</button><button id="import-open">テキスト / JSONから追加</button><button id="export">バックアップを書き出す</button><button id="restore-open">バックアップを復元</button></div></details>
         <input id="import-file" type="file" accept=".txt,.json,text/plain,application/json" hidden><input id="restore-file" type="file" accept=".json,application/json" hidden>
         <p class="queue-help">並べ替えは「上へ・下へ」または左端のハンドルで。本文の編集は表示中のお便りに影響しません。</p>
@@ -74,6 +75,15 @@
     </div>
   </main>
   <dialog id="bulk-dialog"><form method="dialog"><div class="dialog-heading"><h2>お便りをまとめて登録</h2><button aria-label="閉じる" value="cancel">×</button></div><p>お便りの間に、<strong>単独の行で <code>---</code></strong> を入れてください。本文内の空行は段落として残ります。</p><textarea id="bulk-text" placeholder="1件目のお便り&#10;---&#10;2件目のお便り"></textarea><div class="dialog-actions"><button value="cancel">キャンセル</button><button type="button" id="bulk-add" class="primary">一覧に追加</button></div></form></dialog>
+  <dialog id="delete-dialog" aria-labelledby="delete-heading"><form method="dialog">
+    <div class="dialog-heading"><h2 id="delete-heading">お便りをまとめて削除</h2><button aria-label="削除の確認を閉じる" value="cancel">×</button></div>
+    <label class="delete-scope-label" for="delete-scope">削除するお便り</label><select id="delete-scope"><option value="selected">選んだお便り</option><option value="done">紹介済みのお便り</option><option value="all">一覧のすべて</option></select>
+    <div id="delete-selection-tools" class="delete-selection-tools"><span>削除したいものにチェック</span><button type="button" id="delete-select-all" class="small">すべて選ぶ</button><button type="button" id="delete-clear" class="small">選択を解除</button></div>
+    <ul id="delete-list" class="delete-list" aria-label="削除するお便りの確認"></ul><p id="delete-empty" class="delete-empty" hidden>対象のお便りがありません。</p>
+    <p class="delete-help">一覧から削除します。配信中の表示と表示設定は保ちます。削除後は「一覧の操作を戻す」でまとめて戻せます。</p>
+    <p id="delete-draft-note" class="delete-draft-note" hidden>入力中のお便りも削除の対象です。</p>
+    <div class="delete-footer"><span id="delete-count" role="status">0件を選択</span><div class="dialog-actions"><button value="cancel">キャンセル</button><button type="button" id="delete-confirm" class="danger-soft" disabled>0件を削除</button></div></div>
+  </form></dialog>
   <dialog id="ui-theme-dialog"><form method="dialog"><div class="dialog-heading"><h2>操作画面の配色</h2><button aria-label="配色の設定を閉じる" value="close">×</button></div><p>この画面の見た目を変えます。配信に表示するカードの配色は変わりません。</p><div id="ui-theme-presets" class="ui-theme-presets" role="group" aria-label="操作画面の配色プリセット"></div><h3>カスタム</h3><div class="ui-custom"><label>画面の背景<input id="ui-background" type="color"></label><label>パネル<input id="ui-panel" type="color"></label><label>アクセント<input id="ui-accent" type="color"></label><label>文字<input id="ui-text" type="color"></label></div><p id="ui-contrast" class="field-help"></p><p class="field-help">お便り・表示設定と一緒に、左のメニューからバックアップできます。</p><div class="dialog-actions"><button value="close">閉じる</button></div></form></dialog>
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 </body>
