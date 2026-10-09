@@ -5,9 +5,12 @@ Development dependencies: a Linux libobs SDK, LuaJIT library, Xvfb, Chromium,
 Node.js and Playwright. None are needed to use the distributed OBS script.
 """
 import argparse
+import hashlib
+import json
 import os
 from pathlib import Path
 import shutil
+import signal
 import socket
 import subprocess
 import time
@@ -19,12 +22,20 @@ def main():
     parser.add_argument("lua", type=Path, help="LuaJIT prefix (usr)")
     parser.add_argument("--artifacts", type=Path, required=True)
     parser.add_argument("--chromium", default="/usr/bin/chromium")
+    parser.add_argument("--lifecycle-only", action="store_true", help="Only exercise source deletion, script removal/re-addition, and reload")
     args = parser.parse_args()
     project = Path(__file__).resolve().parent.parent
     sdk, lua, artifacts = args.sdk.resolve(), args.lua.resolve(), args.artifacts.resolve()
     artifacts.mkdir(parents=True, exist_ok=True)
-    subprocess.run([shutil.which("python3"), str(project / "tests/letters-font-policy.py"), str(lua),
-                    "--artifacts", str(artifacts)], check=True)
+    source_files = [project / "letters/jp-letters.lua", project / "letters/package.json",
+                    *(project / "letters/runtime").glob("*.lua"), *(project / "letters/web").glob("*")]
+    def source_hashes():
+        return {str(path.relative_to(project / "letters")): hashlib.sha256(path.read_bytes()).hexdigest()
+                for path in sorted(source_files) if path.is_file()}
+    checked_sources = source_hashes()
+    if not args.lifecycle_only:
+        subprocess.run([shutil.which("python3"), str(project / "tests/letters-font-policy.py"), str(lua),
+                        "--artifacts", str(artifacts)], check=True)
     for name in ("stop", "connection.json", "native-stats.json", "save.request", "restore.request", "restored", "saved-source.json", "hotkey.request", "results.json", "failure.png"):
         (artifacts / name).unlink(missing_ok=True)
     executable = artifacts / "letters-host"
@@ -54,19 +65,31 @@ def main():
                     try: probe.connect(str(directory / f"X{number}")); break
                     except OSError: time.sleep(.1)
             else: raise RuntimeError("Xvfb startup timed out")
-            host = subprocess.Popen([str(executable), str(sdk), str(project), str(artifacts)], env=env, stdout=log, stderr=subprocess.STDOUT)
+            host_args = [str(executable), str(sdk), str(project), str(artifacts)]
+            if args.lifecycle_only: host_args.append("--lifecycle-only")
+            host = subprocess.Popen(host_args, env=env, stdout=log, stderr=subprocess.STDOUT)
             for _ in range(100):
                 if host.poll() is not None: raise RuntimeError((artifacts / "native.log").read_text())
                 if (artifacts / "connection.json").exists(): break
                 time.sleep(.1)
             else: raise RuntimeError("Lua source startup timed out")
-            result = subprocess.run([shutil.which("node"), str(project / "tests/letters-e2e.mjs"), str(artifacts)], env=env, timeout=180)
-            (artifacts / "stop").touch()
-            host_result = host.wait(timeout=15)
+            web_result = 0
+            if not args.lifecycle_only:
+                web_result = subprocess.run([shutil.which("node"), str(project / "tests/letters-e2e.mjs"), str(artifacts)], env=env, timeout=180).returncode
+                (artifacts / "stop").touch()
+            host_result = host.wait(timeout=30)
             for line in (artifacts / "native.log").read_text().splitlines():
                 if "PASS:" in line or "FAIL:" in line or "LUA:" in line: print(line)
             if host_result: print("\n".join((artifacts / "native.log").read_text().splitlines()[-45:]))
-            return result.returncode or host_result
+            if host_result < 0: print("FAIL: host terminated by " + signal.Signals(-host_result).name)
+            if not web_result and not host_result:
+                if checked_sources != source_hashes(): raise RuntimeError("Source changed during validation")
+                if not args.lifecycle_only:
+                    result_path = artifacts / "results.json"
+                    report = json.loads(result_path.read_text())
+                    report["sourceSHA256"] = checked_sources
+                    result_path.write_text(json.dumps(report, ensure_ascii=False, indent=2) + "\n")
+            return web_result or host_result
         finally:
             if host and host.poll() is None:
                 (artifacts / "stop").touch()

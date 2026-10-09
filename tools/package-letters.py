@@ -33,8 +33,12 @@ def main():
     font_policy = json.loads((args.validation / "font-policy.json").read_text(encoding="utf-8"))
     native_log = (args.validation / "native.log").read_text(encoding="utf-8")
     native_checks = [line.split("PASS: ", 1)[1] for line in native_log.splitlines() if "PASS: " in line]
-    if len(validation["passed"]) < 17 or len(font_policy["passed"]) < 5 or len(native_checks) < 3 or "FAIL:" in native_log:
+    if len(validation["passed"]) < 17 or len(font_policy["passed"]) < 5 or len(native_checks) < 6 or "FAIL:" in native_log:
         raise SystemExit("Successful web and native lifecycle checks are required before packaging")
+    checked_sources = validation.get("sourceSHA256", {})
+    if not checked_sources or any(hashlib.sha256((ROOT / "letters" / name).read_bytes()).hexdigest() != digest
+                                  for name, digest in checked_sources.items()):
+        raise SystemExit("Source must match the successful validation run")
     version = json.loads((ROOT / "letters/package.json").read_text(encoding="utf-8"))["version"]
     top = f"jp-letters-{version}"
     args.output.mkdir(parents=True, exist_ok=True)
