@@ -1,0 +1,40 @@
+name: Attach release ZIP
+
+"on":
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Release tag (example v0.3.3)
+        required: true
+        type: string
+      sha256:
+        description: SHA-256 of the validated distribution ZIP
+        required: true
+        type: string
+
+permissions: {}
+
+concurrency:
+  group: attach-release-zip-${{ inputs.tag }}
+  cancel-in-progress: false
+
+jobs:
+  attach:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the publishing tool
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Verify, attach and download the release ZIP
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          RELEASE_TAG: ${{ inputs.tag }}
+          EXPECTED_SHA256: ${{ inputs.sha256 }}
+        run: >-
+          python3 tools/attach-release-zip.py
+          --tag "$RELEASE_TAG" --sha256 "$EXPECTED_SHA256"
