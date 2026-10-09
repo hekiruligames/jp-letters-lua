@@ -57,4 +57,6 @@ Safariの追加フォント制限に対応するため、選んだ書体をPC内
 - `tests/`: OBS LuaとChromiumの検証
 - `tools/package-letters.py`: 配布ZIPの生成
 
+ReleaseへのZIP添付は、GitHub Actionsの **Attach release ZIP** からタグと検証済みSHA-256を指定して実行します。ジョブ用の認証で添付し、ダウンロードしたファイルまで照合します。[公開担当者向けの手順](docs/release-attachment.md)。
+
 GPL-2.0-or-later。ソースは配布物にも同梱します。
