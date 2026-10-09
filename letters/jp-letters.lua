@@ -1,5 +1,5 @@
 -- SPDX-License-Identifier: GPL-2.0-or-later
--- Japanese letters / Marshmallow-reading source, version 0.3.0.
+-- Japanese letters / Marshmallow-reading source, version 0.3.1.
 local obs = obslua
 local bit = require("bit")
 local ROOT = script_path()
@@ -9,6 +9,7 @@ local Webfonts = dofile(ROOT .. "runtime/webfonts.lua")
 local ffi = require("ffi")
 local font_families, font_error
 local records, server, server_error, save_at = {}, nil, nil, nil
+local retired_hotkeys = {}
 local revision_counter = 0
 local JSON = "application/json; charset=utf-8"
 local default_font = package.config:sub(1, 1) == "\\" and "Yu Gothic" or "YuGothic"
@@ -106,6 +107,13 @@ local function set_state(record, text)
 end
 
 local function poll()
+    -- OBS supplies current_lua_script for timer callbacks, but not for the
+    -- destroy callbacks it invokes while undefining a script's source type.
+    -- The Lua hotkey wrapper dereferences that context, so defer individual
+    -- source cleanup here. Whole-script removal unregisters callbacks in OBS.
+    local retired = retired_hotkeys
+    retired_hotkeys = {}
+    for _, callback in ipairs(retired) do obs.obs_hotkey_unregister(callback) end
     if server then server.poll() end
     Webfonts.poll(clock)
     if save_at and clock() >= save_at then
@@ -231,7 +239,7 @@ local function control_url(record)
 end
 
 local function shortcut(record, action)
-    if not record.visible then return end
+    if record.destroyed or not record.visible then return end
     local state = state_data(record.state)
     local live = obs.obs_data_get_obj(state, "live")
     if action == "hide" then obs.obs_data_set_bool(live, "visible", false)
@@ -358,24 +366,34 @@ end
 source.save = function(record, settings)
     for action, id in pairs(record.hotkeys) do
         local array = obs.obs_hotkey_save(id)
-        obs.obs_data_set_array(settings, "hotkey_" .. action, array)
-        obs.obs_data_array_release(array)
+        if array then
+            obs.obs_data_set_array(settings, "hotkey_" .. action, array)
+            obs.obs_data_array_release(array)
+        end
     end
 end
 source.destroy = function(record)
+    if record.destroyed then return end
+    record.destroyed = true
     records[record.id] = nil
-    -- OBS's Lua wrapper unregisters by callback, unlike libobs's C API.
-    for _, callback in pairs(record.hotkey_callbacks) do obs.obs_hotkey_unregister(callback) end
+    -- A removed script can be added again while its scene sources still exist.
+    -- Keep their bindings in the parent settings before OBS drops the callbacks.
+    local settings = obs.obs_source_get_settings(record.source)
+    source.save(record, settings)
+    release(settings)
+    for _, callback in pairs(record.hotkey_callbacks) do retired_hotkeys[#retired_hotkeys + 1] = callback end
+    record.hotkey_callbacks, record.hotkeys = {}, {}
     if record.child then
         if record.child_active then obs.obs_source_dec_active(record.child) end
         if record.child_showing then obs.obs_source_dec_showing(record.child) end
         obs.obs_source_release(record.child)
         record.child = nil
+        record.child_active, record.child_showing = false, false
     end
 end
 
 function script_description()
-    return "<h3>日本語お便りテキスト 0.3.0</h3>マシュマロ読み配信などのお便りを、準備・表示・ページ切り替え・スクロールまで扱うソースです。<br><br>ソース追加から「日本語お便りテキスト（マシュマロ向け）」を選び、プロパティの「お便りの操作画面を開く」を押してください。<br><br>マシュマロ本文の貼り付けとテキスト／JSONファイルの取り込みに対応します。受信箱の自動取得機能は含みません。"
+    return "<h3>日本語お便りテキスト 0.3.1</h3>マシュマロ読み配信などのお便りを、準備・表示・ページ切り替え・スクロールまで扱うソースです。<br><br>ソース追加から「日本語お便りテキスト（マシュマロ向け）」を選び、プロパティの「お便りの操作画面を開く」を押してください。<br><br>マシュマロ本文の貼り付けとテキスト／JSONファイルの取り込みに対応します。受信箱の自動取得機能は含みません。"
 end
 function script_load() ensure_server() end
 function script_properties()
@@ -388,9 +406,12 @@ function script_properties()
     return props
 end
 function script_unload()
-    if save_at and obs.obs_frontend_save then obs.obs_frontend_save() end
+    -- Source settings already contain edits. The frontend owns saving during
+    -- script removal/shutdown; calling it here can re-enter script teardown.
+    save_at = nil
     if server then obs.timer_remove(poll) server.stop() end
     server = nil
+    retired_hotkeys = {}
 end
 
 obs.obs_register_source(source)

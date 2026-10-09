@@ -1,0 +1,89 @@
+{
+  "version": "0.3.1",
+  "license": "GPL-2.0-or-later",
+  "runtimeDependencies": "OBS built-in LuaJIT and browser source",
+  "checks": {
+    "passed": [
+      "queue operations preserve the aired snapshot; paragraph imports preserve blank lines",
+      "loopback API rejects missing credentials and foreign origins; sources remain independent",
+      "editing the next text or font leaves the current broadcast unchanged",
+      "long Japanese text fits actual font metrics; page breaks preserve all text and emoji clusters",
+      "small frames and long letters stay bounded; impossible padding yields a useful layout error",
+      "finish selects the next letter without airing it; reorder, delete and undo work",
+      "text file imports preserve paragraphs; malformed JSON and HTML-looking text are handled safely",
+      "backup export includes drafts and settings; restore keeps content and requires deliberate display",
+      "stale operation windows preserve conflicting input without overwriting; multiple sources have separate queues",
+      "host fonts populate the selector; private webfonts render real glyph metrics and valid TTC checksums; typing updates preview immediately; OS shortcut labels differ",
+      "right edge sets exactly 100% opacity without range padding; the editor hide button retains the draft",
+      "transparent preset changes only opacity and outline; reset restores display defaults and preserves letters, live text and UI theme",
+      "720p, 1080p and OBS canvas presets work; auto height fits short text and caps long letters without changing aired dimensions during prep",
+      "scroll mode retains all text; preview is independent; buttons, slider and real OBS hotkeys reach the last line without blanking",
+      "current blue and four pastel themes have readable contrast; custom UI colours are separate, backed up and compatible with old data",
+      "native OBS save/restore keeps state; render readiness and immediate hide remain correct",
+      "desktop and narrow layouts stay usable without horizontal overflow or browser errors"
+    ],
+    "runtime": "Linux libobs 30.2.3 + actual OBS LuaJIT + Chromium",
+    "caveat": "OBS browser API is a stand-in in the host; the HTML renderer is exercised in real Chromium. macOS and Windows runtimes are not run here.",
+    "sourceSHA256": {
+      "jp-letters.lua": "1ef3831eaa480395cf9fa99abca1a648e383007055ca7c41dc023e9947cc7ecc",
+      "package.json": "8d0697bccb8d39d43cadbdc7bf9c47b687ec5adc4b86045ce922b58bf820188c",
+      "runtime/fonts.lua": "7c05f6d0932a8eb2151b7724c70b51ddee70d3756622c243ecd39120ce3d6fbf",
+      "runtime/http.lua": "0b1dfb26dc64157502a86cbf01ff5753da97fda2d9f45a6676acca1232cbefe4",
+      "runtime/webfonts.lua": "d443c942da74b41b2c4ff1a23ba6cb37be87a758d9198bbca06bf59761cf0523",
+      "web/control.html": "af6c225ff64617c88a97f334bbf4462612179897ead3d972bb9e5744731315d7",
+      "web/control.js": "aa02d8447e405e41e77a335d70cd22e7fc5a27d5870c9430c4a366b04772d522",
+      "web/core.js": "82f015ba65894b23e8fc0d0190e2f92805f2c9e329e2cdee103a1951c0297615",
+      "web/display.html": "c0fd53f2faa17e068dfc753a96918a89c11c5d4ec64b4ca4659e0aa8101b0c1e",
+      "web/display.js": "ecb0e543683bbe40a1a047404da61c1fb411434b3c75acc4cda358b6be8566f1",
+      "web/style.css": "60ef92c3be3f0f834224f38949353d18bd3970405c19c91b14c479e0314e1e53",
+      "web/themes.js": "665a58ae9905738b716f319505eba4f29df755aa67a1eb1ac751b3675b4d750a"
+    },
+    "native": [
+      "real OBS Lua source loads; loopback server, panel button and transparent output start",
+      "OBS scene save/restore preserves queue, draft, live snapshot and fonts",
+      "ordinary source deletion releases its browser and hotkeys",
+      "script removal with an active source keeps OBS alive and preserves settings",
+      "script re-addition and repeated reload preserve sources without child or hotkey leaks",
+      "source destruction releases browser children, hotkeys and loopback sockets"
+    ],
+    "fontPolicy": {
+      "passed": [
+        "installable embedding exports a local font",
+        "preview/print embedding exports a local font",
+        "restricted embedding returns no font bytes",
+        "bitmap-only embedding returns no outline font bytes",
+        "missing embedding metadata returns no font bytes"
+      ],
+      "runtime": "Linux Fontconfig + LuaJIT"
+    }
+  },
+  "macOSRuntimeTested": false,
+  "windowsRuntimeTested": false,
+  "sha256": {
+    "jp-letters.lua": "1ef3831eaa480395cf9fa99abca1a648e383007055ca7c41dc023e9947cc7ecc",
+    "runtime/http.lua": "0b1dfb26dc64157502a86cbf01ff5753da97fda2d9f45a6676acca1232cbefe4",
+    "runtime/fonts.lua": "7c05f6d0932a8eb2151b7724c70b51ddee70d3756622c243ecd39120ce3d6fbf",
+    "runtime/webfonts.lua": "d443c942da74b41b2c4ff1a23ba6cb37be87a758d9198bbca06bf59761cf0523",
+    "web/control.html": "af6c225ff64617c88a97f334bbf4462612179897ead3d972bb9e5744731315d7",
+    "web/display.html": "c0fd53f2faa17e068dfc753a96918a89c11c5d4ec64b4ca4659e0aa8101b0c1e",
+    "web/core.js": "82f015ba65894b23e8fc0d0190e2f92805f2c9e329e2cdee103a1951c0297615",
+    "web/control.js": "aa02d8447e405e41e77a335d70cd22e7fc5a27d5870c9430c4a366b04772d522",
+    "web/display.js": "ecb0e543683bbe40a1a047404da61c1fb411434b3c75acc4cda358b6be8566f1",
+    "web/themes.js": "665a58ae9905738b716f319505eba4f29df755aa67a1eb1ac751b3675b4d750a",
+    "web/style.css": "60ef92c3be3f0f834224f38949353d18bd3970405c19c91b14c479e0314e1e53",
+    "package.json": "8d0697bccb8d39d43cadbdc7bf9c47b687ec5adc4b86045ce922b58bf820188c",
+    "README.md": "9e08174f89c775aa427271090c99883a030b20cd881749adede67471ef5b59b5",
+    "はじめに.txt": "33add5473742425e26cc8767275d07e4b78ecaa98051aac2d2ec6a9db9eda29e",
+    "samples/お便りサンプル.txt": "3a2fa12cf72c5f96a8b5034e4a05b0567f8518806f5a3e0398f447aa151bd0aa",
+    "LICENSE": "90b664a6fbc82b38595cbb39606268bef0b2eb9b76b0e9e03826befe204190bb"
+  },
+  "releaseSHA256": "3de925474b2773bb1b6176f7400907e49b78c51f2785a4ab122a4e545d6574b0",
+  "regression": {
+    "previousVersion": "0.3.0",
+    "runtime": "Linux libobs 30.2.3 + actual OBS LuaJIT",
+    "condition": "remove script with an active, showing source still alive",
+    "previousHostExitCode": -11,
+    "previousSignal": "SIGSEGV",
+    "fixedResult": "PASS; removal, re-addition and three reloads preserve source settings and hotkey bindings"
+  }
+}
