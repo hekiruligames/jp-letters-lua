@@ -1,6 +1,6 @@
 # 配布ZIPをReleaseへ添付する
 
-この開発環境ではGitHubの通常APIとGit操作は成功する一方、ReleaseのZIP添付先 `uploads.github.com` でHTTP 401が発生した。リポジトリへの書き込み権限は確認できているが、接続先によって認証結果が異なる原因は未特定である。[Issue #19](https://github.com/hekiruligames/jp-letters/issues/19)で記録する。
+この開発環境ではGitHubの通常APIとGit操作は成功する一方、ReleaseのZIP添付先 `uploads.github.com` でHTTP 401が発生した。リポジトリへの書き込み権限は確認できているが、接続先によって認証結果が異なる原因は未特定である。[Issue #15](https://github.com/hekiruligames/jp-letters-lua/issues/15)で記録する。
 
 公開処理にはGitHub Actionsの **Attach release ZIP** を使う。GitHubがジョブ用に発行するリポジトリ専用の `GITHUB_TOKEN` で添付するため、利用者が個人用アクセストークンを作成・保存する必要はない。手動で実行したときだけ動作する。
 
@@ -20,7 +20,7 @@ sha256: 42c1918a9e3d3ba3ddb364ad69b3f2370183a658cad5164cb4343b0398cf65b7
 GitHub CLIからも実行できる:
 
 ```sh
-gh workflow run attach-release-zip.yml --repo hekiruligames/jp-letters \
+gh workflow run attach-release-zip.yml --repo hekiruligames/jp-letters-lua \
   -f tag=v0.3.3 \
   -f sha256=42c1918a9e3d3ba3ddb364ad69b3f2370183a658cad5164cb4343b0398cf65b7
 ```
@@ -40,7 +40,7 @@ ZIPの取得にはGitHub Contents APIのbase64形式を使うため、現行の�
 
 ```sh
 python3 tests/release-attachment.py
-GH_REPO=hekiruligames/jp-letters python3 tools/attach-release-zip.py \
+GH_REPO=hekiruligames/jp-letters-lua python3 tools/attach-release-zip.py \
   --tag v0.3.3 --sha256 42c1918a9e3d3ba3ddb364ad69b3f2370183a658cad5164cb4343b0398cf65b7 \
   --check-only
 ```
