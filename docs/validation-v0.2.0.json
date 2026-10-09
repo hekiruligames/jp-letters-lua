@@ -1,0 +1,44 @@
+{
+  "version": "0.2.0",
+  "license": "GPL-2.0-or-later",
+  "runtimeDependencies": "OBS built-in LuaJIT and browser source",
+  "checks": {
+    "passed": [
+      "queue operations preserve the aired snapshot; paragraph imports preserve blank lines",
+      "loopback API rejects missing credentials and foreign origins; sources remain independent",
+      "editing the next text or font leaves the current broadcast unchanged",
+      "long Japanese text fits actual font metrics; page breaks preserve all text and emoji clusters",
+      "small frames and long letters stay bounded; impossible padding yields a useful layout error",
+      "finish selects the next letter without airing it; reorder, delete and undo work",
+      "text file imports preserve paragraphs; malformed JSON and HTML-looking text are handled safely",
+      "backup export includes drafts and settings; restore keeps content and requires deliberate display",
+      "stale operation windows preserve conflicting input without overwriting; multiple sources have separate queues",
+      "native OBS save/restore keeps state; render readiness and immediate hide remain correct",
+      "desktop and narrow layouts stay usable without horizontal overflow or browser errors"
+    ],
+    "runtime": "Linux libobs 30.2.3 + actual OBS LuaJIT + Chromium",
+    "caveat": "OBS browser API is a stand-in in the host; the HTML renderer is exercised in real Chromium. macOS and Windows runtimes are not run here.",
+    "native": [
+      "real OBS Lua source loads; loopback server, panel button and transparent output start",
+      "OBS scene save/restore preserves queue, draft, live snapshot and fonts",
+      "source destruction releases browser children, hotkeys and loopback sockets"
+    ]
+  },
+  "macOSRuntimeTested": false,
+  "windowsRuntimeTested": false,
+  "sha256": {
+    "jp-letters.lua": "07f590e99741a6ab28cf36dfbf24986569d8833d385a3571d878c1815dc48223",
+    "runtime/http.lua": "edad12c8d69b77f98df31bf62d4c4244e34cb0259a63a3c78f07cf2325b39471",
+    "web/control.html": "9f280ee96dee6558f43d1d07d50fb71a3693cf57acb20882bb2aa524d46ba1d7",
+    "web/display.html": "c0fd53f2faa17e068dfc753a96918a89c11c5d4ec64b4ca4659e0aa8101b0c1e",
+    "web/core.js": "6a1b320d3336d2b7ae29244655706b6055f4477cb94d32bc68886499d3e0b820",
+    "web/control.js": "85482bf45a8f19ba706b4969fdd52f1b2db9aa0aa3496fcb4db29b94a5c725ef",
+    "web/display.js": "404037a3efeb1df9f6616dd94a3e2810598506c057edae781d89d415953a367f",
+    "web/style.css": "2ecdf8e7fb82cb19a0b309385d85aef05756bdb9ddbd5d6a6f4a6844015838b9",
+    "package.json": "ec1f3ff6105c6bace270ed3c476c4edcdcdbdcd0d9e5bb8cdedfa40d5e967fae",
+    "README.md": "a68784c78c8c1e8a572c124d81bc5e6b343a8238e4918fc117c3dce32c03dfae",
+    "はじめに.txt": "c9fc667a8fae3e8f7064a36484b623587023d8798024235ef18becc781459f31",
+    "samples/お便りサンプル.txt": "3a2fa12cf72c5f96a8b5034e4a05b0567f8518806f5a3e0398f447aa151bd0aa",
+    "LICENSE": "90b664a6fbc82b38595cbb39606268bef0b2eb9b76b0e9e03826befe204190bb"
+  }
+}

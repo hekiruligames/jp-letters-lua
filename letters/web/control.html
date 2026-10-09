@@ -1,0 +1,67 @@
+<!doctype html>
+<html lang="ja">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+  <title>お便りテキスト — 操作画面</title>
+  <link rel="stylesheet" href="/style.css"><script type="module" src="/control.js"></script>
+</head>
+<body class="control-page">
+  <header class="app-header">
+    <div class="brand"><span class="brand-icon" aria-hidden="true">✉</span><div><h1>お便りテキスト</h1><p>準備して、確かめて、配信へ。</p></div></div>
+    <div class="header-tools"><label class="source-label" for="source-picker">操作するソース</label><select id="source-picker" aria-label="操作するソース"></select><span id="connection" class="connection" role="status">OBSに接続中</span></div>
+  </header>
+  <div id="notice" class="notice" role="alert" hidden></div>
+  <div id="empty-setup" class="setup" hidden><span aria-hidden="true">✉</span><h2>OBSにお便りソースを追加してください</h2><p>ソースの「＋」から「日本語お便りテキスト（マシュマロ向け）」を選ぶと、ここに表示されます。</p></div>
+  <main id="app" hidden>
+    <section class="live-bar" aria-label="配信中の操作">
+      <div class="live-description"><span id="live-status" class="live-badge">非表示</span><div><strong id="live-title">まだ配信に表示していません</strong><small id="live-detail">準備中のお便りは、表示ボタンを押すまで配信には出ません。</small></div></div>
+      <div class="live-actions"><div class="page-navigation"><button id="live-prev" aria-label="配信中の前のページ">‹</button><span id="live-page">—</span><button id="live-next" aria-label="配信中の次のページ">›</button></div><button id="finish-live">紹介済みにして次を準備</button><button id="hide-live" class="danger-soft">非表示 <kbd>Esc</kbd></button></div>
+    </section>
+    <div class="workspace">
+      <aside class="queue-panel panel" aria-label="お便りの一覧">
+        <div class="panel-heading"><h2>お便り <span id="queue-count" class="count">0</span></h2><button id="new-letter" class="small primary-soft">＋ 新規</button></div>
+        <input id="search" class="search" type="search" placeholder="本文・メモから探す" aria-label="お便りを検索">
+        <div class="filters" role="group" aria-label="一覧の絞り込み"><button data-filter="all" aria-pressed="true">すべて</button><button data-filter="unread" aria-pressed="false">未紹介</button><button data-filter="done" aria-pressed="false">紹介済み</button></div>
+        <ol id="queue-list" class="queue-list"></ol><p id="queue-empty" class="queue-empty">マシュマロの本文を貼り付けて、最初のお便りを準備しましょう。</p>
+        <div class="queue-tools"><button id="move-up" class="small" aria-label="選択中のお便りを上へ">↑ 上へ</button><button id="move-down" class="small" aria-label="選択中のお便りを下へ">↓ 下へ</button><button id="toggle-done" class="small">紹介済み</button></div>
+        <div class="queue-footer"><button id="delete-letter" class="text-button">削除</button><button id="undo" class="text-button" disabled>一覧の操作を戻す</button></div>
+        <details class="import-menu"><summary>取り込み・バックアップ</summary><div><button id="bulk-open">まとめて貼り付け</button><button id="import-open">テキスト / JSONから追加</button><button id="export">バックアップを書き出す</button><button id="restore-open">バックアップを復元</button></div></details>
+        <input id="import-file" type="file" accept=".txt,.json,text/plain,application/json" hidden><input id="restore-file" type="file" accept=".json,application/json" hidden>
+        <p class="queue-help">並べ替えは「上へ・下へ」または左端のハンドルで。本文の編集は表示中のお便りに影響しません。</p>
+      </aside>
+      <section class="prepare-panel panel" aria-label="表示前の準備">
+        <div class="panel-heading"><h2><span class="prepare-dot"></span> 表示前のプレビュー</h2><span id="preview-size" class="subtle">960 × 540</span></div>
+        <div id="preview-viewport" class="preview-viewport"><div id="preview-host"></div><div id="preview-empty"><span aria-hidden="true">✉</span><p>本文を入れると、ここで見た目を確認できます。</p></div></div>
+        <div class="preview-bottom"><span id="preview-info" class="subtle">長文は読みやすい文字サイズのままページに分けます。</span><div class="page-navigation"><button id="preview-prev" aria-label="準備中の前のページ">‹</button><span id="preview-page">—</span><button id="preview-next" aria-label="準備中の次のページ">›</button></div></div>
+        <div class="editor"><label for="draft-title">管理用のメモ <span class="optional">任意</span></label><input id="draft-title" maxlength="100" placeholder="例：ゲームの質問、最近の出来事">
+          <div class="editor-label"><label for="draft-text">お便りの本文</label><span id="character-count" class="subtle">0文字</span></div>
+          <textarea id="draft-text" maxlength="12000" placeholder="マシュマロの本文をここに貼り付けてください。&#10;改行や段落を保ったまま表示できます。"></textarea>
+          <div class="editor-bottom"><span id="save-status" class="subtle" role="status">OBSに保存済み</span><button id="save-draft">一覧に保存</button><button id="show-letter" class="primary">このお便りを配信に表示 <kbd>Alt ↵</kbd></button></div>
+        </div>
+      </section>
+      <aside class="settings-panel panel" aria-label="表示の設定">
+        <div class="panel-heading"><h2>表示の設定</h2><span class="prepare-label">準備中</span></div><p class="settings-help">ここで変更した見た目は「配信に表示」を押すと反映されます。</p>
+        <div class="themes" role="group" aria-label="見た目のプリセット"><button data-theme="card">カード</button><button data-theme="clear">透過</button><button data-theme="soft">やわらかい</button></div>
+        <details class="setting-section" open><summary>文字と配置</summary><div class="setting-body">
+          <label for="font">フォント</label><input id="font" list="font-options" placeholder="インストール済みのフォント名"><datalist id="font-options"><option value="YuGothic">游ゴシック（Mac）</option><option value="Yu Gothic">游ゴシック（Windows）</option><option value="Hiragino Kaku Gothic ProN">ヒラギノ角ゴ</option><option value="Noto Sans CJK JP">Noto Sans CJK JP</option><option value="Yusei Magic">Yusei Magic</option></datalist>
+          <div class="field-pair"><label>文字サイズ <span class="unit">px</span><input id="fontSize" type="number" min="16" max="128" step="1"></label><label>行間 <span class="unit">倍</span><input id="lineHeight" type="number" min="1.1" max="2.4" step="0.1"></label></div>
+          <div class="field-pair"><label>左右の配置<select id="align"><option value="left">左揃え</option><option value="center">中央揃え</option><option value="right">右揃え</option></select></label><label>上下の配置<select id="verticalAlign"><option value="top">上</option><option value="center">中央</option><option value="bottom">下</option></select></label></div>
+          <div class="field-pair colours"><label>文字色<input id="textColor" type="color"></label><label>輪郭の色<input id="outlineColor" type="color"></label></div><label>輪郭の幅 <span class="unit">px</span><input id="outlineWidth" type="number" min="0" max="8" step="0.5"></label>
+        </div></details>
+        <details class="setting-section" open><summary>固定する枠と透明な余白</summary><div class="setting-body">
+          <div class="field-pair"><label>枠の幅 <span class="unit">px</span><input id="width" type="number" min="320" max="3840"></label><label>枠の高さ <span class="unit">px</span><input id="height" type="number" min="180" max="2160"></label></div>
+          <p class="field-help">外側の透明な余白。影やグローを描くスペースになります。</p>
+          <div class="field-pair"><label>上 <span class="unit">px</span><input id="padding-top" type="number" min="0" max="4096"></label><label>右 <span class="unit">px</span><input id="padding-right" type="number" min="0" max="4096"></label><label>下 <span class="unit">px</span><input id="padding-bottom" type="number" min="0" max="4096"></label><label>左 <span class="unit">px</span><input id="padding-left" type="number" min="0" max="4096"></label></div>
+        </div></details>
+        <details class="setting-section"><summary>カードと表示する情報</summary><div class="setting-body">
+          <label>カードの色<input id="background" type="color"></label><label>カードの不透明度 <output id="opacity-value">94%</output><input id="backgroundOpacity" type="range" min="0" max="100" step="1"></label>
+          <div class="field-pair"><label>角の丸み <span class="unit">px</span><input id="radius" type="number" min="0" max="120"></label><label>カード内の余白 <span class="unit">px</span><input id="innerPadding" type="number" min="0" max="128"></label></div>
+          <label class="check"><input id="showTitle" type="checkbox">管理用のメモも配信に表示する</label><label class="check"><input id="showPageNumber" type="checkbox">複数ページのときページ番号を表示</label>
+        </div></details>
+      </aside>
+    </div>
+  </main>
+  <dialog id="bulk-dialog"><form method="dialog"><div class="dialog-heading"><h2>お便りをまとめて登録</h2><button aria-label="閉じる" value="cancel">×</button></div><p>お便りの間に、<strong>単独の行で <code>---</code></strong> を入れてください。本文内の空行は段落として残ります。</p><textarea id="bulk-text" placeholder="1件目のお便り&#10;---&#10;2件目のお便り"></textarea><div class="dialog-actions"><button value="cancel">キャンセル</button><button type="button" id="bulk-add" class="primary">一覧に追加</button></div></form></dialog>
+  <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
+</body>
+</html>
