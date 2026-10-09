@@ -78,8 +78,8 @@ local function secret()
     return (bytes:gsub(".", function(c) return string.format("%02x", c:byte()) end))
 end
 
-local reasons = { [200] = "OK", [400] = "Bad Request", [403] = "Forbidden",
-    [404] = "Not Found", [409] = "Conflict", [413] = "Payload Too Large", [500] = "Internal Server Error" }
+local reasons = { [200] = "OK", [202] = "Accepted", [400] = "Bad Request", [403] = "Forbidden",
+    [404] = "Not Found", [409] = "Conflict", [413] = "Payload Too Large", [422] = "Unprocessable Content", [500] = "Internal Server Error" }
 local function response(status, body, mime)
     body = body or ""
     return "HTTP/1.1 " .. status .. " " .. (reasons[status] or "Error") .. "\r\n" ..
@@ -128,6 +128,7 @@ function M.start(options)
     local function finish(client, status, body, mime)
         client.output, client.sent = response(status, body, mime), 0
         client.input = ""
+        if mime == "font/ttf" or mime == "font/otf" then client.deadline = clock() + 15 end
     end
     local function dispatch(client)
         local boundary = client.input:find("\r\n\r\n", 1, true)
@@ -201,9 +202,13 @@ function M.start(options)
                 if not closed then dispatch(client) end
             end
             if not closed and client.output then
-                local remaining = client.output:sub(client.sent + 1, client.sent + 32768)
-                local n = tonumber(C.send(client.fd, remaining, #remaining, (not windows and not mac) and 0x4000 or 0))
-                if n > 0 then client.sent = client.sent + n end
+                for _ = 1, 4 do
+                    local remaining = client.output:sub(client.sent + 1, client.sent + 32768)
+                    local n = tonumber(C.send(client.fd, remaining, #remaining, (not windows and not mac) and 0x4000 or 0))
+                    if n <= 0 then break end
+                    client.sent = client.sent + n
+                    if client.sent == #client.output then break end
+                end
                 closed = client.sent == #client.output
             end
             if closed then close_socket(client.fd) server.clients[key] = nil end

@@ -1,15 +1,19 @@
 -- SPDX-License-Identifier: GPL-2.0-or-later
--- Japanese letters / Marshmallow-reading source, version 0.2.0.
+-- Japanese letters / Marshmallow-reading source, version 0.3.0.
 local obs = obslua
 local bit = require("bit")
 local ROOT = script_path()
 local Http = dofile(ROOT .. "runtime/http.lua")
+local Fonts = dofile(ROOT .. "runtime/fonts.lua")
+local Webfonts = dofile(ROOT .. "runtime/webfonts.lua")
+local ffi = require("ffi")
+local font_families, font_error
 local records, server, server_error, save_at = {}, nil, nil, nil
 local revision_counter = 0
 local JSON = "application/json; charset=utf-8"
 local default_font = package.config:sub(1, 1) == "\\" and "Yu Gothic" or "YuGothic"
 if require("ffi").os == "Linux" then default_font = "Noto Sans CJK JP" end
-local DEFAULT = [[{"version":1,"items":[],"selectedId":null,"draft":{"id":null,"title":"","text":""},"style":{"width":960,"height":540,"font":"FONT","fontSize":48,"lineHeight":1.5,"padding":{"top":40,"right":40,"bottom":40,"left":40},"innerPadding":24,"textColor":"#ffffff","outlineColor":"#101827","outlineWidth":0,"background":"#172437","backgroundOpacity":0.94,"radius":24,"align":"left","verticalAlign":"center","showTitle":false,"showPageNumber":true},"live":{"visible":false,"id":null,"title":"","text":"","page":0,"style":null}}]]
+local DEFAULT = [[{"version":1,"items":[],"selectedId":null,"draft":{"id":null,"title":"","text":""},"style":{"width":960,"height":540,"font":"FONT","fontSize":48,"lineHeight":1.5,"padding":{"top":40,"right":40,"bottom":40,"left":40},"innerPadding":24,"textColor":"#222222","outlineColor":"#101827","outlineWidth":0,"background":"#ffffff","backgroundOpacity":1,"radius":24,"align":"left","verticalAlign":"center","showTitle":false,"showPageNumber":true,"readingMode":"pages","autoHeight":false},"live":{"visible":false,"id":null,"title":"","text":"","page":0,"style":null,"scroll":0},"ui":{"preset":"blue","custom":{"background":"#f3f6fa","panel":"#ffffff","accent":"#3468d4","text":"#263349"}}}]]
 DEFAULT = DEFAULT:gsub("FONT", default_font)
 
 local function release(value) if value then obs.obs_data_release(value) end end
@@ -32,8 +36,12 @@ local function inspect(record)
     local style = live and obs.obs_data_get_obj(live, "style") or nil
     if not style then style = obs.obs_data_get_obj(state, "style") end
     local width = int(style and obs.obs_data_get_int(style, "width") or 960, 320, 3840)
-    local height = int(style and obs.obs_data_get_int(style, "height") or 460, 180, 2160)
+    local height = int(style and obs.obs_data_get_int(style, "height") or 540, 180, 2160)
     local visible = live and obs.obs_data_get_bool(live, "visible") or false
+    -- Scrolling moves already-painted text and does not need to blank the source.
+    if style and obs.obs_data_get_string(style, "readingMode") == "scroll" and live then
+        obs.obs_data_unset_user_value(live, "scroll")
+    end
     local signature = live and obs.obs_data_get_json(live) or ""
     signature = signature .. ":" .. width .. ":" .. height
     release(style) release(live) release(state)
@@ -48,6 +56,8 @@ local function envelope(record)
     obs.obs_data_set_int(response, "liveRevision", record.live_revision)
     obs.obs_data_set_int(response, "renderedLiveRevision", record.report_revision or -1)
     obs.obs_data_set_int(response, "pageCount", record.page_count or 0)
+    obs.obs_data_set_double(response, "scrollMax", record.scroll_max or 0)
+    obs.obs_data_set_double(response, "viewportHeight", record.viewport_height or 0)
     obs.obs_data_set_string(response, "name", obs.obs_source_get_name(record.source))
     obs.obs_data_set_string(response, "error", record.error or "")
     local text = obs.obs_data_get_json(response)
@@ -97,13 +107,49 @@ end
 
 local function poll()
     if server then server.poll() end
+    Webfonts.poll(clock)
     if save_at and clock() >= save_at then
         save_at = nil
         if obs.obs_frontend_save then obs.obs_frontend_save() end
     end
 end
 
-local function handle(method, path, _, body, headers)
+local function handle(method, path, query, body, headers)
+    if method == "GET" and path == "/api/font" then
+        if not font_families then font_families, font_error = Fonts.list(default_font) end
+        local known = false
+        for _, family in ipairs(font_families) do if family == query.name then known = true break end end
+        if not known then return 404, "一覧にないフォントです。PCにある書体を一覧から選んでください。" end
+        local data, mime, pending = Webfonts.get(query.name)
+        if pending then return 202, "{}", JSON end
+        if not data then return 422, mime end
+        return 200, data, mime
+    end
+    if method == "GET" and path == "/api/environment" then
+        local root, video = obs.obs_data_create(), obs.obs_video_info()
+        obs.obs_data_set_string(root, "platform", ffi.os)
+        obs.obs_data_set_string(root, "defaultFont", default_font)
+        if obs.obs_get_video_info(video) then
+            obs.obs_data_set_int(root, "canvasWidth", video.base_width)
+            obs.obs_data_set_int(root, "canvasHeight", video.base_height)
+        end
+        local text = obs.obs_data_get_json(root) release(root)
+        return 200, text, JSON
+    end
+    if method == "GET" and path == "/api/fonts" then
+        if not font_families then font_families, font_error = Fonts.list(default_font) end
+        local root, array = obs.obs_data_create(), obs.obs_data_array_create()
+        for _, family in ipairs(font_families) do
+            local item = obs.obs_data_create()
+            obs.obs_data_set_string(item, "family", family)
+            obs.obs_data_array_push_back(array, item) release(item)
+        end
+        obs.obs_data_set_array(root, "fonts", array)
+        obs.obs_data_set_string(root, "error", font_error or "")
+        local text = obs.obs_data_get_json(root)
+        obs.obs_data_array_release(array) release(root)
+        return 200, text, JSON
+    end
     if method == "GET" and path == "/api/sources" then
         local root, array = obs.obs_data_create(), obs.obs_data_array_create()
         for id, record in pairs(records) do
@@ -131,6 +177,8 @@ local function handle(method, path, _, body, headers)
         if obs.obs_data_get_int(request, "liveRevision") == record.live_revision then
             record.report_revision = record.live_revision
             record.page_count = int(obs.obs_data_get_int(request, "pageCount"), 1, 10000)
+            record.scroll_max = math.max(0, math.min(10000000, obs.obs_data_get_double(request, "scrollMax")))
+            record.viewport_height = math.max(0, math.min(2160, obs.obs_data_get_double(request, "viewportHeight")))
             record.ready_at = clock() + 0.08
         end
         release(request)
@@ -157,7 +205,8 @@ local function ensure_server()
         local assets = {}
         local files = { ["control.html"] = "text/html; charset=utf-8", ["display.html"] = "text/html; charset=utf-8",
             ["core.js"] = "text/javascript; charset=utf-8", ["control.js"] = "text/javascript; charset=utf-8",
-            ["display.js"] = "text/javascript; charset=utf-8", ["style.css"] = "text/css; charset=utf-8" }
+            ["display.js"] = "text/javascript; charset=utf-8", ["themes.js"] = "text/javascript; charset=utf-8",
+            ["style.css"] = "text/css; charset=utf-8" }
         for name, mime in pairs(files) do
             local file = assert(io.open(ROOT .. "web/" .. name, "rb"), "同梱のwebフォルダが見つかりません。")
             local content = file:read("*a")
@@ -187,9 +236,17 @@ local function shortcut(record, action)
     local live = obs.obs_data_get_obj(state, "live")
     if action == "hide" then obs.obs_data_set_bool(live, "visible", false)
     else
-        local page = obs.obs_data_get_int(live, "page")
-        local count = record.page_count or 1
-        obs.obs_data_set_int(live, "page", int(page + (action == "next" and 1 or -1), 0, math.max(0, count - 1)))
+        local style = obs.obs_data_get_obj(live, "style")
+        if style and obs.obs_data_get_string(style, "readingMode") == "scroll" then
+            local step = record.scroll_max and record.scroll_max > 0 and 0.85 * record.viewport_height / record.scroll_max or 0
+            local position = obs.obs_data_get_double(live, "scroll") + (action == "next" and step or -step)
+            obs.obs_data_set_double(live, "scroll", math.max(0, math.min(1, position)))
+        else
+            local page = obs.obs_data_get_int(live, "page")
+            local count = record.page_count or 1
+            obs.obs_data_set_int(live, "page", int(page + (action == "next" and 1 or -1), 0, math.max(0, count - 1)))
+        end
+        release(style)
     end
     obs.obs_data_set_obj(state, "live", live)
     set_state(record, obs.obs_data_get_json(state))
@@ -238,7 +295,7 @@ source.create = function(settings, parent)
     for action, label in pairs({next = "次のページ", previous = "前のページ", hide = "非表示"}) do
         local callback = function(pressed) if pressed then shortcut(record, action) end end
         local id = obs.obs_hotkey_register_frontend("jp_letters." .. record.id .. "." .. action,
-            obs.obs_source_get_name(parent) .. "：" .. label, callback)
+            obs.obs_source_get_name(parent) .. "：" .. label .. (action == "hide" and "" or "（スクロール時は上下）"), callback)
         record.hotkeys[action] = id
         record.hotkey_callbacks[action] = callback
         local saved = obs.obs_data_get_array(settings, "hotkey_" .. action)
@@ -318,7 +375,7 @@ source.destroy = function(record)
 end
 
 function script_description()
-    return "<h3>日本語お便りテキスト 0.2.0</h3>マシュマロ読み配信などのお便りを、準備・表示・ページ切り替えまで扱うソースです。<br><br>ソース追加から「日本語お便りテキスト（マシュマロ向け）」を選び、プロパティの「お便りの操作画面を開く」を押してください。<br><br>マシュマロ本文の貼り付けとテキスト／JSONファイルの取り込みに対応します。受信箱の自動取得機能は含みません。"
+    return "<h3>日本語お便りテキスト 0.3.0</h3>マシュマロ読み配信などのお便りを、準備・表示・ページ切り替え・スクロールまで扱うソースです。<br><br>ソース追加から「日本語お便りテキスト（マシュマロ向け）」を選び、プロパティの「お便りの操作画面を開く」を押してください。<br><br>マシュマロ本文の貼り付けとテキスト／JSONファイルの取り込みに対応します。受信箱の自動取得機能は含みません。"
 end
 function script_load() ensure_server() end
 function script_properties()

@@ -1,5 +1,6 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 import * as Core from './core.js';
+import {UI_THEMES, uiColours, applyUI} from './themes.js';
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search), token = params.get('token') || '';
 let sourceId = params.get('source') || '', state = null, revision = -1, metadata = {};
@@ -8,6 +9,17 @@ let generation = 0, savedGeneration = 0, writing = null, saveTimer, blocked = fa
 let previewPage = 0, previewCount = 1, previewError = '', previewSerial = 0, liveCount = 1;
 let previewController;
 let filter = 'all', dragId = null, undoStack = [], toastTimer, liveLayoutKey = '', sourceRefreshAt = 0;
+let environment = {}, availableFonts = [], fontOptionsKey = '', fontCustomMode = false;
+let previewScroll = 0, previewMetrics = {scrollMax: 0, viewportHeight: 1}, previewStyle = null;
+let liveMetrics = {scrollMax: 0, viewportHeight: 1};
+let fontListHelp = 'PCのフォント一覧を取得しています。';
+
+function updateFontHelp(family) {
+  const status = Core.fontStatus(family);
+  $('font-help').textContent = `${fontListHelp} ${status.pending ? '選んだ書体を読み込んでいます。' :
+    status.loaded ? '選んだ書体でプレビューしています。' :
+    'この書体は通常のPC内フォント表示を使います。Safariで異なる場合は、一覧から別の書体を選ぶかChrome/Edgeで確認してください。'}`;
+}
 
 function toast(message) {
   $('toast').textContent = message; $('toast').hidden = false;
@@ -60,25 +72,55 @@ async function flush() {
   }).finally(() => { writing = null; });
   return writing;
 }
-function mutate(operation, remember = false) {
+function mutate(operation, remember = false, prepare = true) {
   if (!state || blocked) return false;
   try {
     const previous = Core.clone(state), next = Core.clone(state);
     operation(next);
     state = Core.normalizeState(next);
     if (remember) { undoStack.push(previous); if (undoStack.length > 15) undoStack.shift(); }
-    generation++; saveStatus(); render(); scheduleSave(); return true;
+    generation++; saveStatus(); if (prepare) render(); else updateLive(); scheduleSave(); return true;
   } catch (error) { toast(error.message); return false; }
 }
-function setInput(id, value) { if (document.activeElement !== $(id)) $(id).value = value; }
+function setInput(id, value) {
+  const input = $(id); if (document.activeElement !== input) input.value = value;
+  if (input.type === 'range') input.style.setProperty('--range-progress', `${(Number(value) - Number(input.min)) / (Number(input.max) - Number(input.min)) * 100}%`);
+}
+const fontLabels = {'Yu Gothic': '游ゴシック', YuGothic: '游ゴシック', 'Hiragino Kaku Gothic ProN': 'ヒラギノ角ゴ',
+  'Hiragino Mincho ProN': 'ヒラギノ明朝', 'Noto Sans CJK JP': 'Noto Sans（日本語）', 'Noto Serif CJK JP': 'Noto Serif（日本語）'};
+function renderFonts() {
+  const search = $('font-search').value.toLocaleLowerCase('ja'), key = JSON.stringify([search, availableFonts, state.style.font, fontCustomMode]);
+  if (key === fontOptionsKey) return;
+  fontOptionsKey = key;
+  const candidates = [...new Set([state.style.font, ...availableFonts])].filter(family => family === state.style.font ||
+    `${family} ${fontLabels[family] || ''}`.toLocaleLowerCase('ja').includes(search));
+  $('font').replaceChildren(...candidates.map(family => {
+    const option = document.createElement('option'); option.value = family;
+    option.textContent = fontLabels[family] ? `${fontLabels[family]} · ${family}` : family;
+    return option;
+  }));
+  const custom = document.createElement('option'); custom.value = '__custom__'; custom.textContent = 'フォント名を入力…'; $('font').append(custom);
+  $('font').value = fontCustomMode ? '__custom__' : state.style.font;
+  $('font-custom').hidden = !fontCustomMode; setInput('font-custom', state.style.font);
+}
+function renderUI() {
+  const ratio = applyUI(state.ui), colours = uiColours(state.ui);
+  document.querySelectorAll('[data-ui-theme]').forEach(button => button.setAttribute('aria-pressed', String(button.dataset.uiTheme === state.ui.preset)));
+  for (const key of ['background', 'panel', 'accent', 'text']) setInput(`ui-${key}`, colours[key]);
+  $('ui-contrast').textContent = ratio < 4.5 ? '文字と背景が近い色です。文字色を濃くすると読みやすくなります。' : 'この配色は文字を読みやすい濃さにしています。';
+}
 function renderInputs() {
   setInput('draft-title', state.draft.title); setInput('draft-text', state.draft.text);
   $('character-count').textContent = `${Array.from(state.draft.text).length.toLocaleString('ja-JP')}文字`;
-  for (const key of ['font', 'fontSize', 'lineHeight', 'align', 'verticalAlign', 'textColor', 'outlineColor',
+  for (const key of ['fontSize', 'lineHeight', 'align', 'verticalAlign', 'textColor', 'outlineColor',
     'outlineWidth', 'width', 'height', 'radius', 'innerPadding', 'background']) setInput(key, state.style[key]);
   for (const side of ['top', 'right', 'bottom', 'left']) setInput(`padding-${side}`, state.style.padding[side]);
   setInput('backgroundOpacity', Math.round(state.style.backgroundOpacity * 100));
   $('opacity-value').textContent = `${Math.round(state.style.backgroundOpacity * 100)}%`;
+  $('backgroundOpacity').style.setProperty('--range-progress', `${state.style.backgroundOpacity * 100}%`);
+  setInput('readingMode', state.style.readingMode); renderFonts();
+  $('auto-height').setAttribute('aria-pressed', String(state.style.autoHeight));
+  $('height-label').textContent = state.style.autoHeight ? '最大の高さ' : '枠の高さ';
   $('showTitle').checked = state.style.showTitle; $('showPageNumber').checked = state.style.showPageNumber;
   $('save-draft').disabled = !state.draft.text.trim();
   $('undo').disabled = !undoStack.length;
@@ -112,7 +154,7 @@ function renderQueue() {
     const title = document.createElement('strong'); title.textContent = Core.label(item); heading.append(index, title);
     if (item.done) { const badge = document.createElement('span'); badge.className = 'item-done'; badge.textContent = '✓ 済'; heading.append(badge); }
     const snippet = document.createElement('span'); snippet.className = 'item-snippet'; snippet.textContent = item.text;
-    button.append(heading, snippet); button.addEventListener('click', () => { previewPage = 0; mutate(s => Core.selectItem(s, item.id)); });
+    button.append(heading, snippet); button.addEventListener('click', () => { previewPage = 0; previewScroll = 0; mutate(s => Core.selectItem(s, item.id)); });
     li.append(handle, button); return li;
   });
   $('queue-list').replaceChildren(...nodes);
@@ -124,7 +166,8 @@ function renderQueue() {
 function scalePreview() {
   if (!state) return;
   const box = $('preview-viewport');
-  const scale = Math.min((box.clientWidth - 24) / state.style.width, (box.clientHeight - 20) / state.style.height, 1);
+  const dimensions = previewStyle || state.style;
+  const scale = Math.min((box.clientWidth - 24) / dimensions.width, (box.clientHeight - 20) / dimensions.height, 1);
   $('preview-host').style.transform = `scale(${Math.max(.05, scale)})`;
 }
 async function updatePreview() {
@@ -135,19 +178,30 @@ async function updatePreview() {
   $('preview-empty').hidden = !!draft.text.trim();
   if (!draft.text.trim()) {
     $('preview-host').replaceChildren(); previewCount = 1; previewError = '';
+    previewStyle = null; previewMetrics = {scrollMax: 0, viewportHeight: 1}; $('preview-scroll').hidden = true;
     $('preview-page').textContent = '—'; $('preview-prev').disabled = true; $('preview-next').disabled = true;
     $('show-letter').disabled = true;
     $('preview-info').textContent = '長文は読みやすい文字サイズのままページに分けます。'; $('preview-info').classList.remove('error');
     return;
   }
   try {
+    updateFontHelp(style.font);
     const scratch = document.createElement('div');
-    const result = await Core.renderLetter(scratch, draft, style, previewPage, {signal: previewController.signal});
+    const result = await Core.renderLetter(scratch, {...draft, scroll: previewScroll}, style, previewPage, {signal: previewController.signal});
     if (serial !== previewSerial) return;
+    updateFontHelp(style.font);
     $('preview-host').replaceChildren(result.frame); previewCount = result.pages.length; previewPage = result.page;
-    previewError = ''; scalePreview();
-    $('preview-page').textContent = `${previewPage + 1} / ${previewCount}`;
-    $('preview-info').textContent = previewCount > 1 ? `全${previewCount}ページ。配信中も上の矢印で切り替えられます。` : 'この内容は1ページに収まります。';
+    previewError = '';
+    previewMetrics = result; previewStyle = result.style; scalePreview();
+    $('preview-size').textContent = `${result.style.width} × ${result.style.height}${style.autoHeight ? '（自動）' : ''}`;
+    const scrolling = style.readingMode === 'scroll'; $('preview-scroll').hidden = !scrolling;
+    $('preview-prev').textContent = scrolling ? '↑' : '‹'; $('preview-next').textContent = scrolling ? '↓' : '›';
+    $('preview-prev').setAttribute('aria-label', scrolling ? '準備中の文章を上へ' : '準備中の前のページ');
+    $('preview-next').setAttribute('aria-label', scrolling ? '準備中の文章を下へ' : '準備中の次のページ');
+    $('preview-page').textContent = scrolling ? `${Math.round(previewScroll * 100)}%` : `${previewPage + 1} / ${previewCount}`;
+    setInput('preview-scroll', Math.round(previewScroll * 1000));
+    $('preview-info').textContent = scrolling ? (result.scrollMax > 0 ? '全文を上下にスクロールできます。' : '全文がこの枠に収まります。') :
+      previewCount > 1 ? `全${previewCount}ページ。配信中も上の矢印で切り替えられます。` : 'この内容は1ページに収まります。';
     $('preview-info').classList.remove('error'); $('show-letter').disabled = false;
   } catch (error) {
     if (serial !== previewSerial) return;
@@ -155,7 +209,22 @@ async function updatePreview() {
     $('preview-info').textContent = previewError; $('preview-info').classList.add('error');
     $('show-letter').disabled = true; previewCount = 1; $('preview-page').textContent = '—';
   }
-  $('preview-prev').disabled = previewPage <= 0; $('preview-next').disabled = previewPage >= previewCount - 1;
+  updatePreviewNavigation();
+}
+function updatePreviewNavigation() {
+  const scrolling = state.style.readingMode === 'scroll';
+  $('preview-prev').disabled = previewError || (scrolling ? previewScroll <= 0 || previewMetrics.scrollMax <= 0 : previewPage <= 0);
+  $('preview-next').disabled = previewError || (scrolling ? previewScroll >= 1 || previewMetrics.scrollMax <= 0 : previewPage >= previewCount - 1);
+  $('preview-scroll').disabled = previewError || previewMetrics.scrollMax <= 0;
+  if (scrolling) {
+    $('preview-page').textContent = `${Math.round(previewScroll * 100)}%`; setInput('preview-scroll', Math.round(previewScroll * 1000));
+  }
+}
+function movePreviewScroll(position) {
+  previewScroll = Math.max(0, Math.min(1, position));
+  const frame = $('preview-host').querySelector('.letter-frame');
+  if (frame) Core.setScroll(frame, previewScroll);
+  updatePreviewNavigation();
 }
 function updateLive() {
   if (!state) return;
@@ -164,23 +233,29 @@ function updateLive() {
   $('live-title').textContent = onAir ? Core.label(live) : '配信には表示していません';
   const ready = metadata.renderedLiveRevision === metadata.liveRevision;
   if (ready && metadata.pageCount) liveCount = metadata.pageCount;
+  if (ready) liveMetrics = {scrollMax: metadata.scrollMax || 0, viewportHeight: metadata.viewportHeight || 1};
+  const scrolling = live.style?.readingMode === 'scroll';
   $('live-detail').textContent = onAir ? (ready ? '準備中の編集は、表示中のお便りに反映されません。' : '表示を更新しています…') : '準備中のお便りは、表示ボタンを押すまで配信には出ません。';
-  $('live-page').textContent = onAir ? `${Math.min(live.page + 1, liveCount)} / ${liveCount}` : '—';
-  $('live-prev').disabled = !onAir || live.page <= 0;
-  $('live-next').disabled = !onAir || live.page >= liveCount - 1;
-  $('hide-live').disabled = !onAir; $('finish-live').disabled = !onAir;
+  $('live-page').textContent = onAir ? (scrolling ? `${Math.round(live.scroll * 100)}%` : `${Math.min(live.page + 1, liveCount)} / ${liveCount}`) : '—';
+  $('live-prev').textContent = scrolling ? '↑' : '‹'; $('live-next').textContent = scrolling ? '↓' : '›';
+  $('live-prev').setAttribute('aria-label', scrolling ? '表示中の文章を上へ' : '配信中の前のページ');
+  $('live-next').setAttribute('aria-label', scrolling ? '表示中の文章を下へ' : '配信中の次のページ');
+  $('live-prev').disabled = !onAir || (scrolling ? live.scroll <= 0 || liveMetrics.scrollMax <= 0 : live.page <= 0);
+  $('live-next').disabled = !onAir || (scrolling ? live.scroll >= 1 || liveMetrics.scrollMax <= 0 : live.page >= liveCount - 1);
+  $('live-scroll').hidden = !onAir || !scrolling; $('live-scroll').disabled = !onAir || liveMetrics.scrollMax <= 0;
+  setInput('live-scroll', Math.round(live.scroll * 1000));
+  $('hide-live').disabled = !onAir; $('hide-editor').disabled = !onAir; $('finish-live').disabled = !onAir;
   const key = JSON.stringify([live.text, live.style]);
   if (onAir && key !== liveLayoutKey) {
     liveLayoutKey = key;
-    Core.paginate(live.text, live.style || state.style).then(pages => {
+    Core.renderLetter(document.createElement('div'), live, live.style || state.style, live.page, {prepared: true}).then(result => {
       if (key !== liveLayoutKey) return;
-      if (metadata.renderedLiveRevision !== metadata.liveRevision) liveCount = pages.length;
-      $('live-page').textContent = `${Math.min(state.live.page + 1, liveCount)} / ${liveCount}`;
-      $('live-next').disabled = !state.live.visible || state.live.page >= liveCount - 1;
+      if (metadata.renderedLiveRevision !== metadata.liveRevision) { liveCount = result.pages.length; liveMetrics = result; }
+      updateLive();
     }).catch(() => {});
   }
 }
-function render() { if (state) { renderInputs(); renderQueue(); updateLive(); updatePreview(); } }
+function render() { if (state) { renderUI(); renderInputs(); renderQueue(); updateLive(); updatePreview(); } }
 
 async function loadSource(id) {
   if (state && generation > savedGeneration) await flush();
@@ -188,6 +263,7 @@ async function loadSource(id) {
   sourceId = id; state = Core.normalizeState(result.state); revision = result.revision; metadata = result;
   persistedStateKey = stateKey(result.state);
   generation = savedGeneration = 0; blocked = false; undoStack = []; previewPage = 0; liveLayoutKey = '';
+  previewScroll = 0; fontCustomMode = false; fontOptionsKey = ''; previewStyle = null;
   const url = new URL(location.href); url.searchParams.set('source', id); history.replaceState(null, '', url);
   $('source-picker').value = id; $('app').hidden = false; $('empty-setup').hidden = true;
   connection(true); notice(result.error || ''); saveStatus(); render();
@@ -227,38 +303,68 @@ document.querySelectorAll('[data-filter]').forEach(button => button.addEventList
   document.querySelectorAll('[data-filter]').forEach(other => other.setAttribute('aria-pressed', String(other === button)));
   if (state) renderQueue();
 }));
-$('new-letter').addEventListener('click', () => { previewPage = 0; mutate(Core.newDraft); $('draft-text').focus(); });
+$('new-letter').addEventListener('click', () => { previewPage = 0; previewScroll = 0; mutate(Core.newDraft); $('draft-text').focus(); });
 for (const [id, key] of [['draft-title', 'title'], ['draft-text', 'text']]) $(id).addEventListener('input', () => {
-  const value = $(id).value; previewPage = 0; mutate(s => { s.draft[key] = value; });
+  const value = $(id).value; previewPage = 0; previewScroll = 0; mutate(s => { s.draft[key] = value; });
 });
 $('save-draft').addEventListener('click', () => { if (mutate(Core.saveDraft, true)) toast('一覧に保存しました。配信への表示は変わりません。'); });
 async function show() {
   if (!state || !state.draft.text.trim()) return;
   try {
     const expected = generation;
-    await Core.paginate(state.draft.text, state.style);
+    const prepared = await Core.renderLetter(document.createElement('div'), state.draft, state.style);
     if (expected !== generation) return show();
-    if (!mutate(Core.showDraft)) return;
+    if (!mutate(s => Core.showDraft(s, prepared.style))) return;
     await flush(); toast('このお便りを配信に表示します。');
   } catch (error) { toast(error.message || previewError); }
 }
 $('show-letter').addEventListener('click', show);
-function changeLivePage(delta) { mutate(s => { s.live.page = Math.max(0, Math.min(liveCount - 1, s.live.page + delta)); }); flush().catch(() => {}); }
+function changeLivePage(delta) {
+  mutate(s => {
+    if (s.live.style?.readingMode === 'scroll') {
+      const step = liveMetrics.scrollMax > 0 ? 0.85 * liveMetrics.viewportHeight / liveMetrics.scrollMax : 0;
+      s.live.scroll = Math.max(0, Math.min(1, s.live.scroll + delta * step));
+    } else s.live.page = Math.max(0, Math.min(liveCount - 1, s.live.page + delta));
+  }, false, false);
+  flush().catch(() => {});
+}
 $('live-prev').addEventListener('click', () => changeLivePage(-1)); $('live-next').addEventListener('click', () => changeLivePage(1));
-$('preview-prev').addEventListener('click', () => { previewPage = Math.max(0, previewPage - 1); updatePreview(); });
-$('preview-next').addEventListener('click', () => { previewPage = Math.min(previewCount - 1, previewPage + 1); updatePreview(); });
-$('hide-live').addEventListener('click', () => { mutate(s => { s.live.visible = false; }); flush().catch(() => {}); });
-$('finish-live').addEventListener('click', () => { previewPage = 0; mutate(Core.finishLive, true); flush().catch(() => {}); });
+for (const [id, delta] of [['preview-prev', -1], ['preview-next', 1]]) $(id).addEventListener('click', () => {
+  if (state.style.readingMode === 'scroll') movePreviewScroll(previewScroll + delta * (previewMetrics.scrollMax > 0 ? .85 * previewMetrics.viewportHeight / previewMetrics.scrollMax : 0));
+  else { previewPage = Math.max(0, Math.min(previewCount - 1, previewPage + delta)); updatePreview(); }
+});
+$('preview-scroll').addEventListener('input', () => movePreviewScroll(Number($('preview-scroll').value) / 1000));
+$('preview-viewport').addEventListener('wheel', event => {
+  if (!state || state.style.readingMode !== 'scroll' || previewMetrics.scrollMax <= 0) return;
+  event.preventDefault(); movePreviewScroll(previewScroll + event.deltaY / previewMetrics.scrollMax);
+}, {passive: false});
+$('live-scroll').addEventListener('input', () => { const position = Number($('live-scroll').value) / 1000; mutate(s => { s.live.scroll = position; }, false, false); });
+for (const id of ['hide-live', 'hide-editor']) $(id).addEventListener('click', () => {
+  mutate(s => { s.live.visible = false; }, false, false); flush().catch(() => {});
+});
+$('finish-live').addEventListener('click', () => { previewPage = 0; previewScroll = 0; mutate(Core.finishLive, true); flush().catch(() => {}); });
 for (const [id, delta] of [['move-up', -1], ['move-down', 1]]) $(id).addEventListener('click', () => {
   mutate(s => Core.moveItem(s, s.selectedId, s.items.findIndex(item => item.id === s.selectedId) + delta), true);
 });
 $('toggle-done').addEventListener('click', () => mutate(s => { const item = s.items.find(item => item.id === s.selectedId); if (item) item.done = !item.done; }, true));
 $('delete-letter').addEventListener('click', () => { mutate(s => Core.removeItem(s, s.selectedId), true); toast('一覧から削除しました。「一覧の操作を戻す」で復元できます。'); });
-$('undo').addEventListener('click', () => { const previous = undoStack.pop(); if (previous) mutate(s => { const live = s.live; Object.assign(s, Core.clone(previous)); s.live = live; }); });
-for (const key of ['font', 'fontSize', 'lineHeight', 'align', 'verticalAlign', 'textColor', 'outlineColor', 'outlineWidth', 'width', 'height', 'radius', 'innerPadding', 'background']) {
+$('undo').addEventListener('click', () => { const previous = undoStack.pop(); if (previous) mutate(s => {
+  const {live, style, ui} = s; Object.assign(s, Core.clone(previous), {live, style, ui});
+}); });
+$('font-search').addEventListener('input', () => state && renderFonts());
+$('font').addEventListener('change', () => {
+  const family = $('font').value; fontCustomMode = family === '__custom__';
+  if (fontCustomMode) { fontOptionsKey = ''; renderFonts(); $('font-custom').focus(); $('font-custom').select(); return; }
+  previewPage = 0; previewScroll = 0; mutate(s => { s.style.font = family; });
+});
+$('font-custom').addEventListener('input', () => {
+  const family = $('font-custom').value; previewPage = 0; previewScroll = 0;
+  if (family.trim()) mutate(s => { s.style.font = family; });
+});
+for (const key of ['fontSize', 'lineHeight', 'align', 'verticalAlign', 'textColor', 'outlineColor', 'outlineWidth', 'width', 'height', 'radius', 'innerPadding', 'background', 'readingMode']) {
   $(key).addEventListener('change', () => {
-    const value = ['font', 'align', 'verticalAlign', 'textColor', 'outlineColor', 'background'].includes(key) ? $(key).value : Number($(key).value);
-    previewPage = 0; mutate(s => { s.style[key] = value; });
+    const value = ['align', 'verticalAlign', 'textColor', 'outlineColor', 'background', 'readingMode'].includes(key) ? $(key).value : Number($(key).value);
+    previewPage = 0; previewScroll = 0; mutate(s => { s.style[key] = value; });
   });
 }
 for (const side of ['top', 'right', 'bottom', 'left']) $(`padding-${side}`).addEventListener('change', () => {
@@ -266,12 +372,34 @@ for (const side of ['top', 'right', 'bottom', 'left']) $(`padding-${side}`).addE
 });
 $('backgroundOpacity').addEventListener('input', () => { const value = Number($('backgroundOpacity').value) / 100; mutate(s => { s.style.backgroundOpacity = value; }); });
 for (const key of ['showTitle', 'showPageNumber']) $(key).addEventListener('change', () => { const checked = $(key).checked; previewPage = 0; mutate(s => { s.style[key] = checked; }); });
-document.querySelectorAll('[data-theme]').forEach(button => button.addEventListener('click', () => mutate(s => {
-  const name = button.dataset.theme;
-  Object.assign(s.style, name === 'clear' ? {backgroundOpacity: 0, innerPadding: 0, outlineWidth: 2, textColor: '#ffffff'} :
-    name === 'soft' ? {background: '#fff4e6', backgroundOpacity: .97, textColor: '#5b4637', outlineWidth: 0, innerPadding: 24, radius: 32} :
-    {background: '#172437', backgroundOpacity: .94, textColor: '#ffffff', outlineWidth: 0, innerPadding: 24, radius: 24});
-})));
+document.querySelectorAll('[data-theme]').forEach(button => button.addEventListener('click', () => mutate(s => Core.applyDisplayPreset(s.style, button.dataset.theme))));
+$('reset-style').addEventListener('click', () => {
+  previewPage = 0; previewScroll = 0; fontCustomMode = false; fontOptionsKey = '';
+  mutate(s => { s.style = Core.normalizeStyle({...Core.DEFAULT_STYLE, font: environment.defaultFont || Core.DEFAULT_STYLE.font}); });
+  toast('表示設定を初期値に戻しました。配信中のお便りと操作画面の配色は保っています。');
+});
+document.querySelectorAll('[data-frame]').forEach(button => button.addEventListener('click', () => {
+  const [width, height] = button.dataset.frame.split(',').map(Number);
+  previewPage = 0; previewScroll = 0; mutate(s => Object.assign(s.style, {width, height}));
+}));
+$('obs-frame').addEventListener('click', () => {
+  if (environment.canvasWidth > 3840 || environment.canvasHeight > 2160) { toast('この版の枠は3840×2160pxまでです。幅と高さを入力してください。'); return; }
+  previewPage = 0; previewScroll = 0; mutate(s => Object.assign(s.style, {width: environment.canvasWidth, height: environment.canvasHeight}));
+});
+$('auto-height').addEventListener('click', () => { previewPage = 0; previewScroll = 0; mutate(s => { s.style.autoHeight = !s.style.autoHeight; }); });
+
+for (const [key, theme] of Object.entries(UI_THEMES)) {
+  const button = document.createElement('button'); button.type = 'button'; button.dataset.uiTheme = key;
+  const swatch = document.createElement('span'); swatch.className = 'theme-swatch';
+  swatch.style.background = `linear-gradient(135deg, ${theme.background} 0% 65%, ${theme.accent} 65%)`;
+  button.append(swatch, document.createTextNode(theme.name));
+  button.addEventListener('click', () => mutate(s => { s.ui.preset = key; })); $('ui-theme-presets').append(button);
+}
+$('ui-theme-open').addEventListener('click', () => state && $('ui-theme-dialog').showModal());
+for (const key of ['background', 'panel', 'accent', 'text']) $(`ui-${key}`).addEventListener('input', () => {
+  const value = $(`ui-${key}`).value;
+  mutate(s => { s.ui.custom = {...uiColours(s.ui), [key]: value}; s.ui.preset = 'custom'; });
+});
 
 function appendItems(items) {
   if (!items.length) throw new Error('追加するお便りが見つかりませんでした。');
@@ -280,7 +408,7 @@ function appendItems(items) {
   if (!mutate(s => { Core.saveDraft(s); s.items.push(...items); Core.selectItem(s, items[0].id); }, true)) {
     throw new Error('追加できませんでした。お便りの数と本文を確認してください。');
   }
-  previewPage = 0; toast(`${items.length}件のお便りを追加しました。配信への表示は変わりません。`);
+  previewPage = 0; previewScroll = 0; toast(`${items.length}件のお便りを追加しました。配信への表示は変わりません。`);
 }
 $('bulk-open').addEventListener('click', () => $('bulk-dialog').showModal());
 $('bulk-add').addEventListener('click', () => { try { appendItems(Core.importText($('bulk-text').value)); $('bulk-dialog').close(); $('bulk-text').value = ''; } catch (error) { toast(error.message); } });
@@ -294,7 +422,7 @@ $('export').addEventListener('click', () => {
   if (!state) return;
   const blob = new Blob([JSON.stringify(state, null, 2)], {type: 'application/json'}), url = URL.createObjectURL(blob);
   const link = document.createElement('a'); link.href = url; link.download = `お便りバックアップ-${new Date().toISOString().slice(0, 10)}.json`; link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 10000); toast('お便りと表示設定のバックアップを書き出しました。');
+  setTimeout(() => URL.revokeObjectURL(url), 10000); toast('お便り・表示設定・画面の配色のバックアップを書き出しました。');
 });
 $('restore-open').addEventListener('click', () => $('restore-file').click());
 $('restore-file').addEventListener('change', async () => {
@@ -309,11 +437,28 @@ $('restore-file').addEventListener('change', async () => {
   } catch (error) { toast(error.message); } finally { $('restore-file').value = ''; }
 });
 document.addEventListener('keydown', event => {
-  if ($('bulk-dialog').open || !state) return;
+  if ($('bulk-dialog').open || $('ui-theme-dialog').open || !state) return;
   if (event.altKey && event.key === 'Enter') { event.preventDefault(); show(); }
   else if (event.key === 'Escape' && state.live.visible) { event.preventDefault(); $('hide-live').click(); }
   else if (event.altKey && ['ArrowLeft', 'ArrowRight'].includes(event.key) && state.live.visible) { event.preventDefault(); changeLivePage(event.key === 'ArrowRight' ? 1 : -1); }
 });
 new ResizeObserver(scalePreview).observe($('preview-viewport'));
 window.addEventListener('beforeunload', event => { if (generation > savedGeneration) { event.preventDefault(); event.returnValue = ''; } });
+const mac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+$('show-shortcut').textContent = `${mac ? 'Option' : 'Alt'} ↵`;
+$('show-letter').title = `${mac ? 'Option' : 'Alt'}＋Enterで表示`;
+async function initializeControls() {
+  const results = await Promise.allSettled([request('/api/environment'), request('/api/fonts')]);
+  if (results[0].status === 'fulfilled') {
+    environment = results[0].value; $('obs-frame').disabled = !environment.canvasWidth;
+    $('obs-frame').title = environment.canvasWidth ? `${environment.canvasWidth} × ${environment.canvasHeight}` : '';
+  }
+  if (results[1].status === 'fulfilled') {
+    availableFonts = results[1].value.fonts.map(item => item.family).sort((a, b) => a.localeCompare(b, 'ja'));
+    fontListHelp = results[1].value.error ? 'フォント名を手入力できます。一覧はOBSを再起動すると読み直します。' : `このPCの${availableFonts.length}書体から選べます。`;
+  } else fontListHelp = '一覧を取得できませんでした。「フォント名を入力」から指定できます。';
+  if (state) { fontOptionsKey = ''; renderFonts(); updateFontHelp(state.style.font); }
+  else $('font-help').textContent = fontListHelp;
+}
+initializeControls();
 poll();

@@ -23,6 +23,8 @@ def main():
     project = Path(__file__).resolve().parent.parent
     sdk, lua, artifacts = args.sdk.resolve(), args.lua.resolve(), args.artifacts.resolve()
     artifacts.mkdir(parents=True, exist_ok=True)
+    subprocess.run([shutil.which("python3"), str(project / "tests/letters-font-policy.py"), str(lua),
+                    "--artifacts", str(artifacts)], check=True)
     for name in ("stop", "connection.json", "native-stats.json", "save.request", "restore.request", "restored", "saved-source.json", "hotkey.request", "results.json", "failure.png"):
         (artifacts / name).unlink(missing_ok=True)
     executable = artifacts / "letters-host"
