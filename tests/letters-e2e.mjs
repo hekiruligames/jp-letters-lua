@@ -47,6 +47,8 @@ try {
   await page.goto(connection.control); await page.locator('#app').waitFor({state: 'visible'});
   await display.goto(connection.display);
   assert.equal((await get()).state.items.length, 0); assert.equal((await stats()).visible, false);
+  assert(await page.getByRole('region', {name: '配信画面を操作'}).isVisible());
+  assert(await page.locator('#live-reading-mode').isDisabled());
   await page.locator('#draft-title').fill('最近のゲーム');
   const first = '最近遊んでいるゲームと、おすすめの遊び方を教えてください。';
   await page.locator('#draft-text').fill(first); await page.locator('#save-draft').click(); await saved();
@@ -84,6 +86,17 @@ try {
   for (const chunk of pageInfo.pages) { assert(!/^[\u0301\u3099\u200d\uFE0F]/.test(chunk)); assert(!chunk.endsWith('\u200d')); }
   await page.locator('#show-letter').click(); await until(async () => (await get()).renderedLiveRevision === (await get()).liveRevision, 'browser did not acknowledge long letter');
   await until(async () => (await stats()).visible, 'native output remained hidden');
+  assert.equal(await page.locator('#live-title').textContent(), '長いお便り');
+  assert((await page.locator('#live-excerpt').textContent()).startsWith('「日本語のお便り」です。'));
+  assert.equal(await page.locator('#live-next').textContent(), '次のページ →');
+  const beforePreviewPage = structuredClone((await get()).state.live), beforePreviewOutput = await display.locator('.letter-text').textContent();
+  const firstPreviewOutput = await page.locator('#preview-host .letter-text').textContent();
+  await page.locator('#preview-next').click();
+  await until(async () => (await page.locator('#preview-host .letter-text').textContent()) !== firstPreviewOutput, 'preview next did not move locally');
+  assert.deepEqual((await get()).state.live, beforePreviewPage);
+  assert.equal(await display.locator('.letter-text').textContent(), beforePreviewOutput);
+  await page.screenshot({path: path.join(artifacts, 'live-pages.png'), fullPage: true});
+  pass('the broadcast panel identifies its current letter; preview page movement leaves the aired page unchanged');
   const beforePage = (await get()).state.live.page;
   await page.locator('#live-next').click(); await saved(); assert.equal((await get()).state.live.page, beforePage + 1);
   await until(async () => await display.locator('.letter-text').textContent() === pageInfo.pages[1], 'page button did not update rendered text');
@@ -248,12 +261,31 @@ try {
 
   await page.locator('#readingMode').selectOption('scroll'); await saved();
   assert.equal((await get()).state.live.style.readingMode, 'pages');
+  assert.equal(await page.locator('#live-reading-mode').inputValue(), 'pages');
+  const beforeLiveMode = (await get()).state;
+  await page.locator('#live-reading-mode').selectOption('scroll'); await saved();
+  await until(async () => (await get()).scrollMax > 0 && (await get()).renderedLiveRevision === (await get()).liveRevision, 'live mode switch not rendered');
+  await until(async () => (await display.locator('.letter-text').textContent()) === scrollingText, 'live scroll mode lost text');
+  let afterLiveMode = (await get()).state;
+  assert.deepEqual(afterLiveMode.style, beforeLiveMode.style); assert.deepEqual(afterLiveMode.draft, beforeLiveMode.draft);
+  assert.deepEqual(afterLiveMode.items, beforeLiveMode.items);
+  assert.deepEqual(afterLiveMode.live.style, {...beforeLiveMode.live.style, readingMode: 'scroll'});
+  assert.equal(afterLiveMode.live.page, 0); assert.equal(afterLiveMode.live.scroll, 0);
+  await page.locator('#live-next').click(); await saved(); assert((await get()).state.live.scroll > 0);
+  await page.locator('#live-reading-mode').selectOption('pages'); await saved();
+  await until(async () => (await get()).pageCount > 1 && (await get()).renderedLiveRevision === (await get()).liveRevision, 'live pages mode not rendered');
+  afterLiveMode = (await get()).state;
+  assert.equal(afterLiveMode.live.page, 0); assert.equal(afterLiveMode.live.scroll, 0);
+  assert.deepEqual(afterLiveMode.style, beforeLiveMode.style); assert.equal(afterLiveMode.live.text, scrollingText);
+  assert.equal(await page.locator('#readingMode').inputValue(), 'scroll');
+  pass('switching reading mode beside the live controls resets only the aired position and preserves draft, queue and preparation settings');
   await page.locator('#show-letter').click(); await saved();
   await until(async () => (await get()).scrollMax > 0 && (await get()).renderedLiveRevision === (await get()).liveRevision, 'scroll layout not acknowledged');
   await until(async () => (await display.locator('.letter-text').textContent()) === scrollingText, 'scroll mode lost text');
   const scrollRevision = (await get()).liveRevision;
   await page.locator('#preview-scroll').focus(); await page.locator('#preview-scroll').press('End');
   assert.equal((await get()).state.live.scroll, 0);
+  await page.screenshot({path: path.join(artifacts, 'live-scroll.png'), fullPage: true});
   await page.locator('#live-next').click(); await saved();
   const firstScroll = (await get()).state.live.scroll; assert(firstScroll > 0 && firstScroll < 1);
   assert.equal((await get()).liveRevision, scrollRevision); assert.equal((await stats()).visible, true);
@@ -321,8 +353,14 @@ try {
   await page.unroute('**/api/state/**');
   pass('native OBS save/restore keeps state; render readiness and immediate hide remain correct');
 
-  await page.setViewportSize({width: 390, height: 844}); await sleep(200);
-  const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth); assert.equal(overflow, false);
+  await page.setViewportSize({width: 390, height: 844});
+  await page.locator('#readingMode').selectOption('scroll'); await page.locator('#show-letter').click(); await saved();
+  await page.screenshot({path: path.join(artifacts, 'operation-narrow.png'), fullPage: true});
+  for (const width of [390, 680, 800, 1100, 1200, 1440]) {
+    await page.setViewportSize({width, height: 844}); await sleep(120);
+    const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth); assert.equal(overflow, false, `horizontal overflow at ${width}px`);
+    assert(await page.locator('#live-reading-mode').isVisible()); assert(await page.locator('#readingMode').isVisible());
+  }
   assert.deepEqual(browserErrors, []);
   pass('desktop and narrow layouts stay usable without horizontal overflow or browser errors');
   await fs.writeFile(path.join(artifacts, 'results.json'), JSON.stringify({passed, runtime: 'Linux libobs 30.2.3 + actual OBS LuaJIT + Chromium', caveat: 'OBS browser API is a stand-in in the host; the HTML renderer is exercised in real Chromium. macOS and Windows runtimes are not run here.'}, null, 2));

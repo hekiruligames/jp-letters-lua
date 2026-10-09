@@ -195,13 +195,13 @@ async function updatePreview() {
     previewMetrics = result; previewStyle = result.style; scalePreview();
     $('preview-size').textContent = `${result.style.width} × ${result.style.height}${style.autoHeight ? '（自動）' : ''}`;
     const scrolling = style.readingMode === 'scroll'; $('preview-scroll').hidden = !scrolling;
-    $('preview-prev').textContent = scrolling ? '↑' : '‹'; $('preview-next').textContent = scrolling ? '↓' : '›';
+    $('preview-prev').textContent = scrolling ? '↑ 上へ' : '← 前'; $('preview-next').textContent = scrolling ? '下へ ↓' : '次 →';
     $('preview-prev').setAttribute('aria-label', scrolling ? '準備中の文章を上へ' : '準備中の前のページ');
     $('preview-next').setAttribute('aria-label', scrolling ? '準備中の文章を下へ' : '準備中の次のページ');
     $('preview-page').textContent = scrolling ? `${Math.round(previewScroll * 100)}%` : `${previewPage + 1} / ${previewCount}`;
     setInput('preview-scroll', Math.round(previewScroll * 1000));
     $('preview-info').textContent = scrolling ? (result.scrollMax > 0 ? '全文を上下にスクロールできます。' : '全文がこの枠に収まります。') :
-      previewCount > 1 ? `全${previewCount}ページ。配信中も上の矢印で切り替えられます。` : 'この内容は1ページに収まります。';
+      previewCount > 1 ? `全${previewCount}ページ。ここでは表示前の内容を確認できます。` : 'この内容は1ページに収まります。';
     $('preview-info').classList.remove('error'); $('show-letter').disabled = false;
   } catch (error) {
     if (serial !== previewSerial) return;
@@ -229,20 +229,24 @@ function movePreviewScroll(position) {
 function updateLive() {
   if (!state) return;
   const live = state.live, onAir = live.visible;
+  $('live-panel').classList.toggle('on-air', onAir);
   $('live-status').textContent = onAir ? '表示中' : '非表示'; $('live-status').classList.toggle('on-air', onAir);
   $('live-title').textContent = onAir ? Core.label(live) : '配信には表示していません';
+  $('live-excerpt').textContent = onAir ? Array.from(live.text).slice(0, 220).join('') : '';
+  $('live-excerpt').hidden = !onAir;
   const ready = metadata.renderedLiveRevision === metadata.liveRevision;
   if (ready && metadata.pageCount) liveCount = metadata.pageCount;
   if (ready) liveMetrics = {scrollMax: metadata.scrollMax || 0, viewportHeight: metadata.viewportHeight || 1};
   const scrolling = live.style?.readingMode === 'scroll';
-  $('live-detail').textContent = onAir ? (ready ? '準備中の編集は、表示中のお便りに反映されません。' : '表示を更新しています…') : '準備中のお便りは、表示ボタンを押すまで配信には出ません。';
+  $('live-detail').textContent = onAir ? (ready ? '表示前のプレビューとは、読む位置を別々に操作できます。' : '表示を更新しています…') : '下の「このお便りを配信に表示」から始められます。';
+  setInput('live-reading-mode', scrolling ? 'scroll' : 'pages'); $('live-reading-mode').disabled = !onAir;
   $('live-page').textContent = onAir ? (scrolling ? `${Math.round(live.scroll * 100)}%` : `${Math.min(live.page + 1, liveCount)} / ${liveCount}`) : '—';
-  $('live-prev').textContent = scrolling ? '↑' : '‹'; $('live-next').textContent = scrolling ? '↓' : '›';
+  $('live-prev').textContent = scrolling ? '↑ 上へスクロール' : '← 前のページ'; $('live-next').textContent = scrolling ? '下へスクロール ↓' : '次のページ →';
   $('live-prev').setAttribute('aria-label', scrolling ? '表示中の文章を上へ' : '配信中の前のページ');
   $('live-next').setAttribute('aria-label', scrolling ? '表示中の文章を下へ' : '配信中の次のページ');
   $('live-prev').disabled = !onAir || (scrolling ? live.scroll <= 0 || liveMetrics.scrollMax <= 0 : live.page <= 0);
   $('live-next').disabled = !onAir || (scrolling ? live.scroll >= 1 || liveMetrics.scrollMax <= 0 : live.page >= liveCount - 1);
-  $('live-scroll').hidden = !onAir || !scrolling; $('live-scroll').disabled = !onAir || liveMetrics.scrollMax <= 0;
+  $('live-scroll-row').hidden = !onAir || !scrolling; $('live-scroll').disabled = !onAir || liveMetrics.scrollMax <= 0;
   setInput('live-scroll', Math.round(live.scroll * 1000));
   $('hide-live').disabled = !onAir; $('hide-editor').disabled = !onAir; $('finish-live').disabled = !onAir;
   const key = JSON.stringify([live.text, live.style]);
@@ -329,6 +333,15 @@ function changeLivePage(delta) {
   flush().catch(() => {});
 }
 $('live-prev').addEventListener('click', () => changeLivePage(-1)); $('live-next').addEventListener('click', () => changeLivePage(1));
+$('live-reading-mode').addEventListener('change', () => {
+  if (!state?.live.visible) return;
+  const mode = $('live-reading-mode').value;
+  if (mode === state.live.style?.readingMode) return;
+  liveLayoutKey = ''; liveCount = 1; liveMetrics = {scrollMax: 0, viewportHeight: 1};
+  if (!mutate(s => { s.live.style = {...Core.clone(s.live.style || s.style), readingMode: mode}; s.live.page = 0; s.live.scroll = 0; }, false, false)) return;
+  flush().catch(() => {});
+  toast(`${mode === 'scroll' ? 'スクロール' : 'ページ送り'}に切り替え、配信中のお便りを先頭から表示します。`);
+});
 for (const [id, delta] of [['preview-prev', -1], ['preview-next', 1]]) $(id).addEventListener('click', () => {
   if (state.style.readingMode === 'scroll') movePreviewScroll(previewScroll + delta * (previewMetrics.scrollMax > 0 ? .85 * previewMetrics.viewportHeight / previewMetrics.scrollMax : 0));
   else { previewPage = Math.max(0, Math.min(previewCount - 1, previewPage + delta)); updatePreview(); }

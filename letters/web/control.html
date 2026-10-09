@@ -13,9 +13,18 @@
   <div id="notice" class="notice" role="alert" hidden></div>
   <div id="empty-setup" class="setup" hidden><span aria-hidden="true">✉</span><h2>OBSにお便りソースを追加してください</h2><p>ソースの「＋」から「日本語お便りテキスト（マシュマロ向け）」を選ぶと、ここに表示されます。</p></div>
   <main id="app" hidden>
-    <section class="live-bar" aria-label="配信中の操作">
-      <div class="live-description"><span id="live-status" class="live-badge">非表示</span><div><strong id="live-title">まだ配信に表示していません</strong><small id="live-detail">準備中のお便りは、表示ボタンを押すまで配信には出ません。</small></div></div>
-      <div class="live-actions"><div class="page-navigation"><button id="live-prev" aria-label="配信中の前のページ">‹</button><span id="live-page">—</span><button id="live-next" aria-label="配信中の次のページ">›</button></div><input id="live-scroll" class="position-slider" type="range" min="0" max="1000" step="1" value="0" aria-label="配信中のスクロール位置" hidden><button id="finish-live">紹介済みにして次を準備</button><button id="hide-live" class="danger-soft">非表示 <kbd>Esc</kbd></button></div>
+    <section id="live-panel" class="live-panel" aria-labelledby="live-heading">
+      <div class="live-panel-heading"><div class="live-heading-title"><svg class="live-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="2.5" y="3.5" width="19" height="13" rx="2"/><path d="M8 21h8M12 16.5V21"/></svg><h2 id="live-heading">配信画面を操作</h2></div><span id="live-status" class="live-badge">非表示</span></div>
+      <p class="live-panel-help">このエリアの操作は、OBSの表示にすぐ反映されます。</p>
+      <div class="live-panel-body">
+        <div class="live-current"><span class="live-current-label">いま表示しているお便り</span><strong id="live-title">まだ配信に表示していません</strong><p id="live-excerpt"></p><small id="live-detail">下の「このお便りを配信に表示」から始められます。</small></div>
+        <div class="live-controls">
+          <div class="live-mode-row"><label for="live-reading-mode">配信中の表示方式</label><select id="live-reading-mode" aria-describedby="live-mode-help" disabled><option value="pages">ページ送り</option><option value="scroll">スクロール</option></select><small id="live-mode-help">切り替えると先頭から表示します。</small></div>
+          <div class="page-navigation live-navigation" role="group" aria-label="配信画面の読む位置"><button id="live-prev" aria-label="配信中の前のページ">← 前のページ</button><span id="live-page">—</span><button id="live-next" aria-label="配信中の次のページ">次のページ →</button></div>
+          <label id="live-scroll-row" class="live-scroll-row" hidden>読む位置<input id="live-scroll" class="position-slider" type="range" min="0" max="1000" step="1" value="0" aria-label="配信中のスクロール位置"></label>
+          <div class="live-actions"><button id="finish-live">紹介済みにして次を準備</button><button id="hide-live" class="danger-soft">配信から非表示 <kbd>Esc</kbd></button></div>
+        </div>
+      </div>
     </section>
     <div class="workspace">
       <aside class="queue-panel panel" aria-label="お便りの一覧">
@@ -30,9 +39,10 @@
         <p class="queue-help">並べ替えは「上へ・下へ」または左端のハンドルで。本文の編集は表示中のお便りに影響しません。</p>
       </aside>
       <section class="prepare-panel panel" aria-label="表示前の準備">
-        <div class="panel-heading"><h2><span class="prepare-dot"></span> 表示前のプレビュー</h2><span id="preview-size" class="subtle">960 × 540</span></div>
+        <div class="panel-heading"><h2><span class="prepare-dot"></span> 表示前のプレビュー</h2><span class="prepare-label">配信は変わりません</span><span id="preview-size" class="subtle">960 × 540</span></div>
+        <div class="preview-mode-row"><label for="readingMode">次に表示するお便りの読み方</label><select id="readingMode" aria-describedby="preview-mode-help"><option value="pages">ページ送り</option><option value="scroll">スクロール</option></select><p id="preview-mode-help">「配信に表示」を押すと、1ページ目・先頭から表示します。</p></div>
         <div id="preview-viewport" class="preview-viewport"><div id="preview-host"></div><div id="preview-empty"><span aria-hidden="true">✉</span><p>本文を入れると、ここで見た目を確認できます。</p></div></div>
-        <div class="preview-bottom"><span id="preview-info" class="subtle">長文は読みやすい文字サイズのままページに分けます。</span><div class="preview-navigation"><input id="preview-scroll" class="position-slider" type="range" min="0" max="1000" step="1" value="0" aria-label="準備中のスクロール位置" hidden><div class="page-navigation"><button id="preview-prev" aria-label="準備中の前のページ">‹</button><span id="preview-page">—</span><button id="preview-next" aria-label="準備中の次のページ">›</button></div></div></div>
+        <div class="preview-bottom"><span id="preview-info" class="subtle">長文は読みやすい文字サイズのままページに分けます。</span><div class="preview-navigation"><span class="preview-navigation-label">プレビューだけを操作</span><input id="preview-scroll" class="position-slider" type="range" min="0" max="1000" step="1" value="0" aria-label="準備中のスクロール位置" hidden><div class="page-navigation"><button id="preview-prev" aria-label="準備中の前のページ">← 前</button><span id="preview-page">—</span><button id="preview-next" aria-label="準備中の次のページ">次 →</button></div></div></div>
         <div class="editor"><label for="draft-title">管理用のメモ <span class="optional">任意</span></label><input id="draft-title" maxlength="100" placeholder="例：ゲームの質問、最近の出来事">
           <div class="editor-label"><label for="draft-text">お便りの本文</label><span id="character-count" class="subtle">0文字</span></div>
           <textarea id="draft-text" maxlength="12000" placeholder="マシュマロの本文をここに貼り付けてください。&#10;改行や段落を保ったまま表示できます。"></textarea>
@@ -60,7 +70,6 @@
           <div class="field-pair"><label>角の丸み <span class="unit">px</span><input id="radius" type="number" min="0" max="120"></label><label>カード内の余白 <span class="unit">px</span><input id="innerPadding" type="number" min="0" max="128"></label></div>
           <label class="check"><input id="showTitle" type="checkbox">管理用のメモも配信に表示する</label><label class="check"><input id="showPageNumber" type="checkbox">ページ番号・スクロール位置を表示</label>
         </div></details>
-        <details class="setting-section" open><summary>長文の読み方</summary><div class="setting-body"><label>表示モード<select id="readingMode"><option value="pages">ページで切り替える</option><option value="scroll">上下にスクロールする</option></select></label><p class="field-help">スクロールは矢印か位置スライダーで動かせます。プレビューの操作は配信中の読む位置を変えません。</p></div></details>
       </aside>
     </div>
   </main>
