@@ -128,6 +128,9 @@ try {
   await page.locator('#delete-letter').click(); await saved(); assert.equal((await get()).state.items.length, 1);
   await page.locator('#undo').click(); await saved(); assert.equal((await get()).state.items.length, 2);
   pass('finish selects the next letter without airing it; reorder, delete and undo work');
+  await page.locator('#delete-bulk-open').click(); await page.locator('#delete-scope').selectOption('all');
+  await page.screenshot({path: path.join(artifacts, 'bulk-delete-example.png')});
+  await page.keyboard.press('Escape'); await page.locator('#delete-dialog').waitFor({state: 'hidden'});
 
   await page.locator('#import-file').setInputFiles({name: 'お便り.txt', mimeType: 'text/plain', buffer: Buffer.from('最初の段落。\n\n次の段落。\n---\n<script>window.unwanted = true</script>')});
   await saved(); await until(async () => (await get()).state.items.length === 4, 'text import failed');
@@ -139,6 +142,59 @@ try {
   await page.locator('#import-file').setInputFiles({name: '壊れた.json', mimeType: 'application/json', buffer: Buffer.from('{bad json')});
   await sleep(300); assert.equal((await get()).state.items.length, itemsBefore);
   pass('text file imports preserve paragraphs; malformed JSON and HTML-looking text are handled safely');
+
+  const beforeBulk = (await get()).state, outputBeforeBulk = await display.locator('.letter-text').textContent();
+  await page.locator('#delete-bulk-open').click();
+  assert(await page.locator('#delete-confirm').isDisabled());
+  await page.keyboard.press('Escape'); await page.locator('#delete-dialog').waitFor({state: 'hidden'});
+  assert.deepEqual((await get()).state, beforeBulk); assert((await stats()).visible);
+  await page.locator('#delete-bulk-open').click();
+  await page.locator('#delete-select-all').click(); assert.equal(await page.locator('#delete-confirm').textContent(), '4件を削除');
+  await page.locator('#delete-clear').click(); assert(await page.locator('#delete-confirm').isDisabled());
+  await page.locator('#delete-list input').first().check(); await page.locator('#delete-list input').last().check();
+  assert.equal(await page.locator('#delete-confirm').textContent(), '2件を削除'); assert(await page.locator('#delete-draft-note').isVisible());
+  await page.locator('#delete-confirm').click(); await saved();
+  assert.equal((await get()).state.items.length, 2); assert.equal((await get()).state.draft.text, '');
+  assert.deepEqual((await get()).state.live, beforeBulk.live); assert.equal(await display.locator('.letter-text').textContent(), outputBeforeBulk);
+  await page.locator('#undo').click(); await saved();
+  assert.deepEqual((await get()).state, beforeBulk);
+  await page.locator('#delete-bulk-open').click(); await page.locator('#delete-scope').selectOption('done');
+  assert.equal(await page.locator('#delete-confirm').textContent(), '1件を削除');
+  await page.locator('#delete-confirm').click(); await saved();
+  assert.equal((await get()).state.items.length, 3); assert((await get()).state.items.every(item => !item.done));
+  assert.deepEqual((await get()).state.draft, beforeBulk.draft);
+  await page.locator('#undo').click(); await saved(); assert.deepEqual((await get()).state, beforeBulk);
+  await page.locator('#delete-bulk-open').click(); await page.locator('#delete-scope').selectOption('all');
+  await page.screenshot({path: path.join(artifacts, 'bulk-delete.png')});
+  assert.equal(await page.evaluate(() => window.unwanted), undefined);
+  await page.locator('#delete-confirm').click(); await saved();
+  const afterBulk = (await get()).state;
+  assert.equal(afterBulk.items.length, 0); assert.equal(afterBulk.draft.text, ''); assert(await page.locator('#delete-bulk-open').isDisabled());
+  assert.deepEqual(afterBulk.live, beforeBulk.live); assert.deepEqual(afterBulk.style, beforeBulk.style); assert.deepEqual(afterBulk.ui, beforeBulk.ui);
+  assert.equal(await display.locator('.letter-text').textContent(), outputBeforeBulk); assert((await stats()).visible);
+  await page.locator('#undo').click(); await saved(); assert.deepEqual((await get()).state, beforeBulk);
+  pass('selected, introduced and all-letter deletion keep aired output and settings; Escape cancels, and one undo restores each full batch');
+
+  await page.locator('#new-letter').click(); await page.locator('#draft-title').fill('未登録の下書き');
+  await page.locator('#draft-text').fill('この本文はまだ一覧には登録していません。'); await saved();
+  const unsaved = (await get()).state.draft; assert.equal(unsaved.id ?? null, null);
+  await page.locator('#delete-bulk-open').click(); await page.locator('#delete-scope').selectOption('all');
+  assert(await page.locator('#delete-draft-note').isHidden());
+  const arrivals = await get(), arriving = {id: 'arriving-after-delete-review', title: '後から届いたお便り', text: '確認画面を開いた後の追加です。', done: false};
+  const arrivalResponse = await fetch(`${origin}/api/state/${connection.sourceId}`, {method: 'POST', headers: {...auth, 'Content-Type': 'application/json'},
+    body: JSON.stringify({expectedRevision: arrivals.revision, state: {...arrivals.state, items: [...arrivals.state.items, arriving]}})});
+  assert.equal(arrivalResponse.status, 200);
+  await until(async () => (await page.locator('#queue-count').textContent()) === '5', 'operator did not receive the later arrival');
+  assert.equal(await page.locator('#delete-confirm').textContent(), '4件を削除');
+  await page.locator('#delete-confirm').click(); await saved();
+  assert.deepEqual((await get()).state.items, [arriving]); assert.deepEqual((await get()).state.draft, unsaved);
+  assert.deepEqual((await get()).state.live, beforeBulk.live);
+  await page.locator('#undo').click(); await saved(); assert.equal((await get()).state.items.length, 5); assert.deepEqual((await get()).state.draft, unsaved);
+  // Remove only the synthetic arrival, then return to the earlier prepared letter.
+  await page.locator('#draft-text').fill(''); await page.locator('.queue-select').last().click();
+  await page.locator('#delete-letter').click(); await saved(); await page.locator('.queue-select').last().click(); await saved();
+  assert.equal((await get()).state.items.length, 4);
+  pass('bulk deletion preserves an unregistered draft and never includes letters that arrived after review');
 
   await page.locator('.import-menu summary').click();
   const downloadPromise = page.waitForEvent('download'); await page.locator('#export').click();
@@ -356,6 +412,14 @@ try {
   await page.setViewportSize({width: 390, height: 844});
   await page.locator('#readingMode').selectOption('scroll'); await page.locator('#show-letter').click(); await saved();
   await page.screenshot({path: path.join(artifacts, 'operation-narrow.png'), fullPage: true});
+  await page.locator('#delete-bulk-open').click(); await page.locator('#delete-scope').selectOption('all');
+  assert(await page.locator('#delete-confirm').isEnabled());
+  const modalBounds = await page.locator('#delete-dialog').boundingBox();
+  assert(modalBounds.x >= 0 && modalBounds.x + modalBounds.width <= 390);
+  assert(modalBounds.y >= 0 && modalBounds.y + modalBounds.height <= 844);
+  await page.screenshot({path: path.join(artifacts, 'bulk-delete-narrow.png')});
+  await page.keyboard.press('Escape'); await page.locator('#delete-dialog').waitFor({state: 'hidden'});
+  assert.equal((await get()).state.live.visible, true);
   for (const width of [390, 680, 800, 1100, 1200, 1440]) {
     await page.setViewportSize({width, height: 844}); await sleep(120);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth); assert.equal(overflow, false, `horizontal overflow at ${width}px`);

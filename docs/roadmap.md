@@ -6,6 +6,7 @@
 | --- | --- | --- | --- |
 | 最優先 | [#11](https://github.com/hekiruligames/jp-letters/issues/11) | 不具合報告 | ソースを残したスクリプト削除・再読み込みのクラッシュ（0.3.1で修正） |
 | 操作改善 | [#13](https://github.com/hekiruligames/jp-letters/issues/13) | 追加のフィードバック | 配信中の領域を強調し、ページ／スクロールの選択を操作の横へ移す（0.3.2） |
+| 操作改善 | [#15](https://github.com/hekiruligames/jp-letters/issues/15) | 追加のフィードバック | 選択・紹介済み・全件の一括削除と、1回で全件を戻す操作（0.3.3） |
 | 1 | [#1](https://github.com/hekiruligames/jp-letters/issues/1) | 3 | 不透明度100%のスライダー |
 | 2 | [#2](https://github.com/hekiruligames/jp-letters/issues/2) | 5・6 | フォント一覧とプレビューの即時反映 |
 | 3 | [#3](https://github.com/hekiruligames/jp-letters/issues/3) | 4・8 | 非表示の追加とMacのショートカット表記 |

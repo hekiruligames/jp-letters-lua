@@ -13,6 +13,7 @@ let environment = {}, availableFonts = [], fontOptionsKey = '', fontCustomMode =
 let previewScroll = 0, previewMetrics = {scrollMax: 0, viewportHeight: 1}, previewStyle = null;
 let liveMetrics = {scrollMax: 0, viewportHeight: 1};
 let fontListHelp = 'PCのフォント一覧を取得しています。';
+let deleteSession = null, deleteSelection = new Set(), deleteListKey = '';
 
 function updateFontHelp(family) {
   const status = Core.fontStatus(family);
@@ -161,7 +162,9 @@ function renderQueue() {
   const index = state.items.findIndex(item => item.id === state.selectedId);
   $('move-up').disabled = index <= 0; $('move-down').disabled = index < 0 || index >= state.items.length - 1;
   $('delete-letter').disabled = index < 0; $('toggle-done').disabled = index < 0;
+  $('delete-bulk-open').disabled = !state.items.length;
   $('toggle-done').textContent = index >= 0 && state.items[index].done ? '未紹介に戻す' : '紹介済み';
+  renderDeleteDialog();
 }
 function scalePreview() {
   if (!state) return;
@@ -262,6 +265,7 @@ function updateLive() {
 function render() { if (state) { renderUI(); renderInputs(); renderQueue(); updateLive(); updatePreview(); } }
 
 async function loadSource(id) {
+  if ($('delete-dialog').open) $('delete-dialog').close();
   if (state && generation > savedGeneration) await flush();
   const result = await request(`/api/state/${id}`);
   sourceId = id; state = Core.normalizeState(result.state); revision = result.revision; metadata = result;
@@ -276,7 +280,7 @@ async function refreshSources() {
   const result = await request('/api/sources'), sources = result.sources.sort((a, b) => a.name.localeCompare(b.name, 'ja'));
   const old = $('source-picker').value;
   $('source-picker').replaceChildren(...sources.map(source => { const option = document.createElement('option'); option.value = source.id; option.textContent = source.name; return option; }));
-  if (!sources.length) { state = null; sourceId = ''; $('app').hidden = true; $('empty-setup').hidden = false; return; }
+  if (!sources.length) { if ($('delete-dialog').open) $('delete-dialog').close(); state = null; sourceId = ''; $('app').hidden = true; $('empty-setup').hidden = false; return; }
   const id = sources.some(source => source.id === sourceId) ? sourceId : sources.some(source => source.id === old) ? old : sources[0].id;
   $('source-picker').value = id;
   if (!state || id !== sourceId) await loadSource(id);
@@ -361,6 +365,66 @@ for (const [id, delta] of [['move-up', -1], ['move-down', 1]]) $(id).addEventLis
 });
 $('toggle-done').addEventListener('click', () => mutate(s => { const item = s.items.find(item => item.id === s.selectedId); if (item) item.done = !item.done; }, true));
 $('delete-letter').addEventListener('click', () => { mutate(s => Core.removeItem(s, s.selectedId), true); toast('一覧から削除しました。「一覧の操作を戻す」で復元できます。'); });
+function deleteCandidates() {
+  if (!deleteSession || deleteSession.sourceId !== sourceId || !state) return [];
+  const present = new Set(state.items.map(item => item.id));
+  return deleteSession.items.filter(item => present.has(item.id) && ($('delete-scope').value !== 'done' || item.done));
+}
+function deleteTargetIds() {
+  return deleteCandidates().filter(item => $('delete-scope').value !== 'selected' || deleteSelection.has(item.id)).map(item => item.id);
+}
+function updateDeleteSelection() {
+  const targets = new Set(deleteTargetIds());
+  $('delete-count').textContent = `${targets.size}件を選択`;
+  $('delete-confirm').textContent = `${targets.size}件を削除`;
+  $('delete-confirm').disabled = !targets.size || blocked;
+  $('delete-draft-note').hidden = !targets.has(state?.draft.id);
+  for (const checkbox of $('delete-list').querySelectorAll('input')) checkbox.checked = targets.has(checkbox.value);
+}
+function renderDeleteDialog() {
+  if (!deleteSession || !$('delete-dialog').open) return;
+  const items = deleteCandidates(), selecting = $('delete-scope').value === 'selected';
+  $('delete-selection-tools').hidden = !selecting;
+  $('delete-empty').hidden = !!items.length; $('delete-list').hidden = !items.length;
+  const key = JSON.stringify([$('delete-scope').value, items.map(item => item.id)]);
+  if (key !== deleteListKey) {
+    deleteListKey = key;
+    $('delete-list').replaceChildren(...items.map(item => {
+      const li = document.createElement('li'), label = document.createElement('label'); label.className = 'delete-item';
+      const checkbox = document.createElement('input'); checkbox.type = 'checkbox'; checkbox.value = item.id; checkbox.disabled = !selecting;
+      checkbox.setAttribute('aria-label', `${Core.label(item)}を削除対象にする`);
+      checkbox.addEventListener('change', () => {
+        if (checkbox.checked) deleteSelection.add(item.id); else deleteSelection.delete(item.id);
+        updateDeleteSelection();
+      });
+      const text = document.createElement('span'), title = document.createElement('strong'), snippet = document.createElement('span');
+      title.textContent = Core.label(item); snippet.className = 'delete-snippet'; snippet.textContent = item.text;
+      text.append(title, snippet); label.append(checkbox, text);
+      if (item.done) { const done = document.createElement('span'); done.className = 'delete-done'; done.textContent = '紹介済み'; label.append(done); }
+      li.append(label); return li;
+    }));
+  }
+  updateDeleteSelection();
+}
+$('delete-bulk-open').addEventListener('click', () => {
+  if (!state?.items.length || blocked) return;
+  // Freeze reviewed candidates so later arrivals are never silently included.
+  deleteSession = {sourceId, items: state.items.map(item => item.id === state.draft.id ? {...Core.clone(item), title: state.draft.title, text: state.draft.text} : Core.clone(item))};
+  deleteSelection.clear(); deleteListKey = ''; $('delete-scope').value = 'selected';
+  $('delete-dialog').showModal(); renderDeleteDialog(); $('delete-scope').focus();
+});
+$('delete-dialog').addEventListener('close', () => { deleteSession = null; deleteSelection.clear(); deleteListKey = ''; });
+$('delete-scope').addEventListener('change', renderDeleteDialog);
+$('delete-select-all').addEventListener('click', () => { deleteSelection = new Set(deleteCandidates().map(item => item.id)); updateDeleteSelection(); });
+$('delete-clear').addEventListener('click', () => { deleteSelection.clear(); updateDeleteSelection(); });
+$('delete-confirm').addEventListener('click', () => {
+  if (!$('delete-dialog').open || blocked) return;
+  const ids = deleteTargetIds(); if (!ids.length) return;
+  if (ids.includes(state.draft.id)) { previewPage = 0; previewScroll = 0; }
+  if (!mutate(s => Core.removeItems(s, ids), true)) return;
+  $('delete-dialog').close(); flush().catch(() => {});
+  toast(`${ids.length}件を削除しました。「一覧の操作を戻す」でまとめて戻せます。`);
+});
 $('undo').addEventListener('click', () => { const previous = undoStack.pop(); if (previous) mutate(s => {
   const {live, style, ui} = s; Object.assign(s, Core.clone(previous), {live, style, ui});
 }); });
@@ -450,7 +514,7 @@ $('restore-file').addEventListener('change', async () => {
   } catch (error) { toast(error.message); } finally { $('restore-file').value = ''; }
 });
 document.addEventListener('keydown', event => {
-  if ($('bulk-dialog').open || $('ui-theme-dialog').open || !state) return;
+  if ($('bulk-dialog').open || $('ui-theme-dialog').open || $('delete-dialog').open || !state) return;
   if (event.altKey && event.key === 'Enter') { event.preventDefault(); show(); }
   else if (event.key === 'Escape' && state.live.visible) { event.preventDefault(); $('hide-live').click(); }
   else if (event.altKey && ['ArrowLeft', 'ArrowRight'].includes(event.key) && state.live.visible) { event.preventDefault(); changeLivePage(event.key === 'ArrowRight' ? 1 : -1); }
