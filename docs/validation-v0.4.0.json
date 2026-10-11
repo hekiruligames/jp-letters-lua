@@ -1,0 +1,93 @@
+{
+  "version": "0.4.0",
+  "license": "GPL-2.0-or-later",
+  "runtimeDependencies": "OBS built-in LuaJIT and browser source",
+  "checks": {
+    "passed": [
+      "queue operations preserve the aired snapshot; paragraph imports preserve blank lines",
+      "actual Safari unread-inbox text yields exactly 2 letters in LF/CRLF; notices and menus are excluded, ambiguous/partial copies retain raw text, and oversized reviews are bounded",
+      "loopback API rejects missing credentials and foreign origins; sources remain independent",
+      "editing the next text or font leaves the current broadcast unchanged",
+      "the user Safari sample can be reviewed, selected, saved to the correct OBS source, and undone together without changing the aired letter",
+      "native Chromium copy/paste recognises question links without relying on classes or data attributes; body text survives while image/answer and foreign links are excluded",
+      "clipboard import isolates text and emoji in inert markup; edit/select/save/undo preserve broadcast and paragraphs without external requests",
+      "unrecognised copies retain every line, start unselected, can be split at the cursor, and cancel without saving",
+      "late-arriving duplicates are excluded from default selection; source changes cancel review without importing into another source",
+      "existing delimiter imports preserve CRLF paragraphs; empty, URL-only and overlong candidates require correction before registration",
+      "the broadcast panel identifies its current letter; preview page movement leaves the aired page unchanged",
+      "long Japanese text fits actual font metrics; page breaks preserve all text and emoji clusters",
+      "small frames and long letters stay bounded; impossible padding yields a useful layout error",
+      "finish selects the next letter without airing it; reorder, delete and undo work",
+      "text file imports preserve paragraphs; malformed JSON and HTML-looking text are handled safely",
+      "selected, introduced and all-letter deletion keep aired output and settings; Escape cancels, and one undo restores each full batch",
+      "bulk deletion preserves an unregistered draft and never includes letters that arrived after review",
+      "backup export includes drafts and settings; restore keeps content and requires deliberate display",
+      "stale operation windows preserve conflicting input without overwriting; multiple sources have separate queues",
+      "host fonts populate the selector; private webfonts render real glyph metrics and valid TTC checksums; typing updates preview immediately; OS shortcut labels differ",
+      "right edge sets exactly 100% opacity without range padding; the editor hide button retains the draft",
+      "transparent preset changes only opacity and outline; reset restores display defaults and preserves letters, live text and UI theme",
+      "720p, 1080p and OBS canvas presets work; auto height fits short text and caps long letters without changing aired dimensions during prep",
+      "switching reading mode beside the live controls resets only the aired position and preserves draft, queue and preparation settings",
+      "scroll mode retains all text; preview is independent; buttons, slider and real OBS hotkeys reach the last line without blanking",
+      "current blue and four pastel themes have readable contrast; custom UI colours are separate, backed up and compatible with old data",
+      "native OBS save/restore keeps state; render readiness and immediate hide remain correct",
+      "desktop and narrow layouts stay usable without horizontal overflow or browser errors"
+    ],
+    "runtime": "Linux libobs 30.2.3 + actual OBS LuaJIT + Chromium",
+    "caveat": "OBS browser API is a stand-in in the host; the HTML renderer is exercised in real Chromium. macOS and Windows runtimes are not run here.",
+    "sourceSHA256": {
+      "jp-letters.lua": "4028fe46f2854122c9f2375f83612fda373e638d7f12865a96f3988f2af0ffa0",
+      "package.json": "2852ca7689b5adf6b4684acf5f8f767cc9501fcaa13c07b397998565537868f0",
+      "runtime/fonts.lua": "7c05f6d0932a8eb2151b7724c70b51ddee70d3756622c243ecd39120ce3d6fbf",
+      "runtime/http.lua": "0b1dfb26dc64157502a86cbf01ff5753da97fda2d9f45a6676acca1232cbefe4",
+      "runtime/webfonts.lua": "d443c942da74b41b2c4ff1a23ba6cb37be87a758d9198bbca06bf59761cf0523",
+      "web/control.html": "c987cdd69877a39927810b943e031cd2d557d2b44b7b153a992083333be5e45f",
+      "web/control.js": "1b1741942c8a72239444767e39f16f12ce6ad96919155be3d7f478fc70af5191",
+      "web/core.js": "2503b526301da9d0e3b4ba140edec3279a9b2b84f84a9325aebe40782e3a9795",
+      "web/display.html": "c0fd53f2faa17e068dfc753a96918a89c11c5d4ec64b4ca4659e0aa8101b0c1e",
+      "web/display.js": "ecb0e543683bbe40a1a047404da61c1fb411434b3c75acc4cda358b6be8566f1",
+      "web/imports.js": "a64c10e2ae6057af8e883512e697247ce244a0900ea6f8fb76eff0eec9b8de2f",
+      "web/style.css": "b8105629989ef36f277355878a4c353d5ce2366ff88ff72d57177cfec0989cc5",
+      "web/themes.js": "665a58ae9905738b716f319505eba4f29df755aa67a1eb1ac751b3675b4d750a"
+    },
+    "native": [
+      "real OBS Lua source loads; loopback server, panel button and transparent output start",
+      "OBS scene save/restore preserves queue, draft, live snapshot and fonts",
+      "ordinary source deletion releases its browser and hotkeys",
+      "script removal with an active source keeps OBS alive and preserves settings",
+      "script re-addition and repeated reload preserve sources without child or hotkey leaks",
+      "source destruction releases browser children, hotkeys and loopback sockets"
+    ],
+    "fontPolicy": {
+      "passed": [
+        "installable embedding exports a local font",
+        "preview/print embedding exports a local font",
+        "restricted embedding returns no font bytes",
+        "bitmap-only embedding returns no outline font bytes",
+        "missing embedding metadata returns no font bytes"
+      ],
+      "runtime": "Linux Fontconfig + LuaJIT"
+    }
+  },
+  "macOSRuntimeTested": false,
+  "windowsRuntimeTested": false,
+  "sha256": {
+    "jp-letters.lua": "4028fe46f2854122c9f2375f83612fda373e638d7f12865a96f3988f2af0ffa0",
+    "runtime/http.lua": "0b1dfb26dc64157502a86cbf01ff5753da97fda2d9f45a6676acca1232cbefe4",
+    "runtime/fonts.lua": "7c05f6d0932a8eb2151b7724c70b51ddee70d3756622c243ecd39120ce3d6fbf",
+    "runtime/webfonts.lua": "d443c942da74b41b2c4ff1a23ba6cb37be87a758d9198bbca06bf59761cf0523",
+    "web/control.html": "c987cdd69877a39927810b943e031cd2d557d2b44b7b153a992083333be5e45f",
+    "web/display.html": "c0fd53f2faa17e068dfc753a96918a89c11c5d4ec64b4ca4659e0aa8101b0c1e",
+    "web/core.js": "2503b526301da9d0e3b4ba140edec3279a9b2b84f84a9325aebe40782e3a9795",
+    "web/control.js": "1b1741942c8a72239444767e39f16f12ce6ad96919155be3d7f478fc70af5191",
+    "web/display.js": "ecb0e543683bbe40a1a047404da61c1fb411434b3c75acc4cda358b6be8566f1",
+    "web/themes.js": "665a58ae9905738b716f319505eba4f29df755aa67a1eb1ac751b3675b4d750a",
+    "web/imports.js": "a64c10e2ae6057af8e883512e697247ce244a0900ea6f8fb76eff0eec9b8de2f",
+    "web/style.css": "b8105629989ef36f277355878a4c353d5ce2366ff88ff72d57177cfec0989cc5",
+    "package.json": "2852ca7689b5adf6b4684acf5f8f767cc9501fcaa13c07b397998565537868f0",
+    "README.md": "cea41cd28be59c788f862e6c3b5f42116b1c56fbc5cf86ab6c46a0a226b22ce2",
+    "はじめに.txt": "0bf89c99d9e11992d1feb14282f96fc2c781ecc84ece12a83e736471b06c58cb",
+    "samples/お便りサンプル.txt": "3a2fa12cf72c5f96a8b5034e4a05b0567f8518806f5a3e0398f447aa151bd0aa",
+    "LICENSE": "90b664a6fbc82b38595cbb39606268bef0b2eb9b76b0e9e03826befe204190bb"
+  }
+}

@@ -1,6 +1,7 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 import * as Core from './core.js';
 import {UI_THEMES, uiColours, applyUI} from './themes.js';
+import {analysePaste, importKey, importProblem, MAX_IMPORT_CANDIDATES} from './imports.js';
 const $ = id => document.getElementById(id);
 const params = new URLSearchParams(location.search), token = params.get('token') || '';
 let sourceId = params.get('source') || '', state = null, revision = -1, metadata = {};
@@ -14,6 +15,7 @@ let previewScroll = 0, previewMetrics = {scrollMax: 0, viewportHeight: 1}, previ
 let liveMetrics = {scrollMax: 0, viewportHeight: 1};
 let fontListHelp = 'PCのフォント一覧を取得しています。';
 let deleteSession = null, deleteSelection = new Set(), deleteListKey = '';
+let bulkSession = null, bulkDraft = {text: '', html: ''};
 
 function updateFontHelp(family) {
   const status = Core.fontStatus(family);
@@ -165,6 +167,7 @@ function renderQueue() {
   $('delete-bulk-open').disabled = !state.items.length;
   $('toggle-done').textContent = index >= 0 && state.items[index].done ? '未紹介に戻す' : '紹介済み';
   renderDeleteDialog();
+  updateBulkSelection();
 }
 function scalePreview() {
   if (!state) return;
@@ -266,6 +269,7 @@ function render() { if (state) { renderUI(); renderInputs(); renderQueue(); upda
 
 async function loadSource(id) {
   if ($('delete-dialog').open) $('delete-dialog').close();
+  if ($('bulk-dialog').open) $('bulk-dialog').close();
   if (state && generation > savedGeneration) await flush();
   const result = await request(`/api/state/${id}`);
   sourceId = id; state = Core.normalizeState(result.state); revision = result.revision; metadata = result;
@@ -478,17 +482,160 @@ for (const key of ['background', 'panel', 'accent', 'text']) $(`ui-${key}`).addE
   mutate(s => { s.ui.custom = {...uiColours(s.ui), [key]: value}; s.ui.preset = 'custom'; });
 });
 
-function appendItems(items) {
+function bulkError(message = '') { $('bulk-error').textContent = message; $('bulk-error').hidden = !message; }
+function existingImportKeys() {
+  const keys = new Set(state.items.map(item => importKey(item.id === state.draft.id ? state.draft.text : item.text)));
+  if (state.draft.text.trim()) keys.add(importKey(state.draft.text));
+  return keys;
+}
+function updateBulkSelection() {
+  const session = bulkSession;
+  if (!session?.candidates || !$('bulk-dialog').open) return;
+  if (session.committed) {
+    $('bulk-add').disabled = session.saving || blocked;
+    $('bulk-add').textContent = session.saving ? 'OBSに保存中…' : '保存を再試行';
+    return;
+  }
+  const seen = existingImportKeys();
+  for (const candidate of session.candidates) {
+    const key = importKey(candidate.text), problem = importProblem(candidate.text);
+    candidate.duplicate = seen.has(key); seen.add(key);
+    if (problem || (candidate.duplicate && !candidate.userSelected)) candidate.selected = false;
+    candidate.checkbox.checked = candidate.selected;
+    candidate.checkbox.disabled = !!problem;
+    candidate.node.classList.toggle('selected', candidate.selected);
+    candidate.status.textContent = `${Array.from(candidate.text).length.toLocaleString('ja-JP')}文字${problem ? ` · ${problem}` : candidate.duplicate ? ' · 同じ本文があります' : ''}`;
+    candidate.status.classList.toggle('error', !!problem);
+  }
+  const selected = session.candidates.filter(candidate => candidate.selected).length;
+  const room = Math.max(0, 300 - state.items.length - (!state.draft.id && state.draft.text.trim() ? 1 : 0));
+  $('bulk-count').textContent = `${selected} / ${session.candidates.length}件を選択 · あと${room}件登録できます`;
+  $('bulk-add').textContent = `${selected}件を一覧に登録`;
+  $('bulk-add').disabled = !selected || selected > room || blocked || session.sourceId !== sourceId;
+  if (selected > room) bulkError(`一覧は300件までです。選択するお便りを${room}件以内にしてください。`);
+  else if ($('bulk-error').textContent.startsWith('一覧は300件までです。')) bulkError();
+}
+function bulkPhase(review) {
+  $('bulk-input').hidden = review; $('bulk-review').hidden = !review;
+  $('bulk-input-step').toggleAttribute('aria-current', !review);
+  $('bulk-review-step').toggleAttribute('aria-current', review);
+  (review ? $('bulk-review-step') : $('bulk-input-step')).setAttribute('aria-current', 'step');
+}
+function bulkModeHelp() {
+  const inbox = $('bulk-mode').value === 'inbox';
+  $('bulk-help').hidden = !inbox;
+  $('bulk-text').placeholder = inbox ? '受信箱からコピーした内容を、ここに貼り付けてください。' : '1件目のお便り\n---\n2件目のお便り\n\n本文内の空行は段落として残ります。';
+}
+function renderBulkCandidates() {
+  const session = bulkSession;
+  $('bulk-candidates').replaceChildren(...session.candidates.map((candidate, index) => {
+    const node = document.createElement('li'); node.className = 'bulk-candidate'; candidate.node = node;
+    const heading = document.createElement('div'); heading.className = 'bulk-candidate-heading';
+    const label = document.createElement('label'), checkbox = document.createElement('input'); checkbox.type = 'checkbox';
+    candidate.checkbox = checkbox; label.append(checkbox, document.createTextNode(`お便り ${index + 1}`));
+    checkbox.addEventListener('change', () => { candidate.selected = checkbox.checked; candidate.userSelected = true; updateBulkSelection(); });
+    const status = document.createElement('span'); status.className = 'bulk-candidate-status'; candidate.status = status;
+    heading.append(label, status);
+    const editor = document.createElement('textarea'); editor.value = candidate.text; editor.setAttribute('aria-label', `お便り${index + 1}の本文`);
+    editor.addEventListener('input', () => { candidate.text = editor.value; updateBulkSelection(); updateSplit(); });
+    const split = document.createElement('button'); split.type = 'button'; split.className = 'bulk-split small'; split.textContent = 'カーソル位置で分ける';
+    split.title = '分けたい位置を本文内でクリックしてから押してください。';
+    function updateSplit() { split.disabled = editor.selectionStart <= 0 || editor.selectionStart >= editor.value.length || session.committed; }
+    for (const event of ['click', 'keyup', 'select']) editor.addEventListener(event, updateSplit);
+    split.addEventListener('click', () => {
+      const position = editor.selectionStart;
+      if (session.committed || position <= 0 || position >= candidate.text.length) return;
+      if (session.candidates.length >= MAX_IMPORT_CANDIDATES) { bulkError('一度に確認できるのは500件までです。コピーする範囲を分けてください。'); return; }
+      const parts = [candidate.text.slice(0, position), candidate.text.slice(position)];
+      if (parts.some(part => !part.trim())) { bulkError('本文がある位置で分けてください。'); return; }
+      session.candidates.splice(index, 1, ...parts.map(text => ({text, selected: candidate.selected, userSelected: candidate.userSelected})));
+      renderBulkCandidates(); session.candidates[index + 1].node.querySelector('textarea').focus();
+    });
+    node.append(heading, editor, split); updateSplit(); return node;
+  }));
+  updateBulkSelection();
+}
+function openBulk(mode) {
+  if (!state || blocked) { toast('OBSとの接続を確認してから開いてください。'); return; }
+  bulkSession = {sourceId, html: bulkDraft.html, candidates: null, committed: false, saving: false};
+  $('bulk-source').textContent = $('source-picker').selectedOptions[0]?.textContent || '選択中のソース';
+  $('bulk-mode').value = mode; $('bulk-text').value = bulkDraft.text;
+  $('bulk-back').disabled = false; $('bulk-select-new').disabled = false; $('bulk-clear').disabled = false;
+  $('bulk-candidates').replaceChildren(); bulkPhase(false); bulkModeHelp(); bulkError();
+  $('bulk-dialog').showModal(); $('bulk-text').focus();
+}
+$('inbox-open').addEventListener('click', () => openBulk('inbox'));
+$('bulk-open').addEventListener('click', () => openBulk('separated'));
+$('bulk-dialog').addEventListener('close', () => {
+  bulkDraft = {text: $('bulk-text').value, html: bulkSession?.html || ''}; bulkSession = null;
+});
+$('bulk-text').addEventListener('input', () => { if (bulkSession) { bulkSession.html = ''; bulkSession.candidates = null; } bulkError(); });
+$('bulk-mode').addEventListener('change', () => { if (bulkSession) bulkSession.candidates = null; bulkModeHelp(); bulkError(); });
+$('bulk-text').addEventListener('paste', event => {
+  if (!bulkSession || !event.clipboardData) return;
+  const input = $('bulk-text'), fullPaste = !input.value || (input.selectionStart === 0 && input.selectionEnd === input.value.length);
+  bulkSession.html = ''; bulkSession.candidates = null; bulkError();
+  if ($('bulk-mode').value === 'inbox' && fullPaste) {
+    event.preventDefault();
+    input.value = event.clipboardData.getData('text/plain'); bulkSession.html = event.clipboardData.getData('text/html');
+  }
+});
+$('bulk-analyse').addEventListener('click', () => {
+  if (!bulkSession || blocked) return;
+  try {
+    if (!bulkSession.candidates) {
+      const result = analysePaste({text: $('bulk-text').value, html: bulkSession.html, mode: $('bulk-mode').value});
+      const seen = existingImportKeys();
+      bulkSession.candidates = result.texts.map(text => {
+        const key = importKey(text), selected = result.select && !seen.has(key) && !importProblem(text); seen.add(key);
+        return {text, selected, userSelected: false};
+      });
+      $('bulk-method').textContent = result.note;
+    }
+    bulkError(); bulkPhase(true); renderBulkCandidates(); $('bulk-candidates').querySelector('textarea')?.focus();
+  } catch (error) { bulkError(error.message); }
+});
+$('bulk-back').addEventListener('click', () => { if (!bulkSession?.committed) { bulkPhase(false); bulkError(); $('bulk-text').focus(); } });
+$('bulk-select-new').addEventListener('click', () => {
+  if (!bulkSession?.candidates || bulkSession.committed) return;
+  updateBulkSelection(); for (const candidate of bulkSession.candidates) { candidate.selected = !candidate.duplicate && !importProblem(candidate.text); candidate.userSelected = false; }
+  updateBulkSelection();
+});
+$('bulk-clear').addEventListener('click', () => {
+  if (!bulkSession?.candidates || bulkSession.committed) return;
+  for (const candidate of bulkSession.candidates) { candidate.selected = false; candidate.userSelected = true; } updateBulkSelection();
+});
+
+function appendItems(items, quiet = false) {
   if (!items.length) throw new Error('追加するお便りが見つかりませんでした。');
   if (items.some(item => item.text.length > 12000)) throw new Error('1件のお便りは12,000文字以内にしてください。');
   if (state.items.length + items.length > 300) throw new Error('お便りは300件まで登録できます。');
+  previewPage = 0; previewScroll = 0;
   if (!mutate(s => { Core.saveDraft(s); s.items.push(...items); Core.selectItem(s, items[0].id); }, true)) {
     throw new Error('追加できませんでした。お便りの数と本文を確認してください。');
   }
-  previewPage = 0; previewScroll = 0; toast(`${items.length}件のお便りを追加しました。配信への表示は変わりません。`);
+  if (!quiet) toast(`${items.length}件のお便りを追加しました。配信への表示は変わりません。`);
 }
-$('bulk-open').addEventListener('click', () => $('bulk-dialog').showModal());
-$('bulk-add').addEventListener('click', () => { try { appendItems(Core.importText($('bulk-text').value)); $('bulk-dialog').close(); $('bulk-text').value = ''; } catch (error) { toast(error.message); } });
+$('bulk-add').addEventListener('click', async () => {
+  const session = bulkSession;
+  if (!session?.candidates || session.saving || session.sourceId !== sourceId || blocked) return;
+  try {
+    if (!session.committed) {
+      updateBulkSelection(); if ($('bulk-add').disabled) return;
+      const items = session.candidates.filter(candidate => candidate.selected).map(candidate => ({id: Core.uid(), title: '', text: candidate.text, done: false}));
+      session.committed = true;
+      try { appendItems(items, true); } catch (error) { session.committed = false; throw error; }
+      session.addedCount = items.length;
+      for (const candidate of session.candidates) for (const input of candidate.node.querySelectorAll('input, textarea, button')) input.disabled = true;
+      $('bulk-back').disabled = true; $('bulk-select-new').disabled = true; $('bulk-clear').disabled = true;
+    }
+    session.saving = true; bulkError(); updateBulkSelection(); await flush();
+    if (bulkSession === session) { $('bulk-text').value = ''; session.html = ''; $('bulk-dialog').close(); }
+    toast(`${session.addedCount}件のお便りをOBSに保存しました。「一覧の操作を戻す」でまとめて戻せます。`);
+  } catch (error) {
+    if (bulkSession === session) { bulkError(session.committed ? `追加した内容はこの画面に残っています。${error.message} 保存を再試行できます。` : error.message); }
+  } finally { session.saving = false; if (bulkSession === session) updateBulkSelection(); }
+});
 $('import-open').addEventListener('click', () => $('import-file').click());
 $('import-file').addEventListener('change', async () => {
   const file = $('import-file').files[0]; if (!file) return;
@@ -522,6 +669,7 @@ document.addEventListener('keydown', event => {
 new ResizeObserver(scalePreview).observe($('preview-viewport'));
 window.addEventListener('beforeunload', event => { if (generation > savedGeneration) { event.preventDefault(); event.returnValue = ''; } });
 const mac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
+$('bulk-copy-shortcut').textContent = mac ? '⌘A → ⌘C' : 'Ctrl＋A → Ctrl＋C';
 $('show-shortcut').textContent = `${mac ? 'Option' : 'Alt'} ↵`;
 $('show-letter').title = `${mac ? 'Option' : 'Alt'}＋Enterで表示`;
 async function initializeControls() {

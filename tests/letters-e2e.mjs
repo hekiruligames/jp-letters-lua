@@ -5,6 +5,7 @@ import path from 'node:path';
 import {createRequire} from 'node:module';
 import {importText, normalizeState, newDraft, showDraft, moveItem, removeItem, selectItem} from '../letters/web/core.js';
 import {UI_THEMES, contrast} from '../letters/web/themes.js';
+import {analysePaste} from '../letters/web/imports.js';
 const {chromium} = createRequire(import.meta.url)('playwright');
 const artifacts = process.argv[2];
 const connection = JSON.parse(await fs.readFile(path.join(artifacts, 'connection.json'), 'utf8'));
@@ -20,6 +21,7 @@ async function get(id = connection.sourceId) { const r = await fetch(`${origin}/
 async function stats() { return JSON.parse(await fs.readFile(path.join(artifacts, 'native-stats.json'), 'utf8')); }
 const browser = await chromium.launch({executablePath: process.env.LETTERS_CHROMIUM || '/usr/bin/chromium', headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage']});
 const context = await browser.newContext({viewport: {width: 1440, height: 1050}});
+context.setDefaultTimeout(10000);
 const page = await context.newPage(), display = await context.newPage();
 const browserErrors = [];
 for (const p of [page, display]) p.on('pageerror', error => browserErrors.push(error.message));
@@ -35,6 +37,21 @@ try {
   selectItem(base, 'b'); moveItem(base, 'b', 0); removeItem(base, 'a'); assert.deepEqual(base.live, snapshot);
   newDraft(base); assert.deepEqual(base.live, snapshot);
   pass('queue operations preserve the aired snapshot; paragraph imports preserve blank lines');
+
+  // Supplied by the user from Safari's Japanese unread inbox, 2026-10-11.
+  const safariInbox = await fs.readFile(new URL('./fixtures/marshmallow-inbox-safari-ja.txt', import.meta.url), 'utf8');
+  const safariLetters = ['テストに協力。\n今日のご飯は何？', '匿名で送信'];
+  for (const text of [safariInbox, safariInbox.replaceAll('\n', '\r\n')]) {
+    const result = analysePaste({text}); assert.equal(result.method, 'inbox-text'); assert.deepEqual(result.texts, safariLetters);
+  }
+  const ambiguousInbox = safariInbox.replace('5分前\n匿名で送信', '5分前\n匿名で送信\n---\n2時間前');
+  const unfinishedInbox = safariInbox.slice(0, safariInbox.lastIndexOf('画像ダウンロード'));
+  for (const text of [ambiguousInbox, unfinishedInbox]) {
+    const result = analysePaste({text}); assert.equal(result.method, 'unrecognised'); assert.deepEqual(result.texts, [text]);
+  }
+  assert.throws(() => analysePaste({text: Array(501).fill('本文').join('\n---\n'), mode: 'separated'}), /500件/);
+  assert.throws(() => analysePaste({text: 'a'.repeat(1000001)}), /1MB/);
+  pass('actual Safari unread-inbox text yields exactly 2 letters in LF/CRLF; notices and menus are excluded, ambiguous/partial copies retain raw text, and oversized reviews are bounded');
 
   assert.equal((await fetch(`${origin}/api/sources`)).status, 403);
   assert.equal((await fetch(`${origin}/api/font?name=DejaVu%20Sans`)).status, 403);
@@ -62,6 +79,129 @@ try {
   assert.equal(await display.locator('.letter-text').evaluate(node => getComputedStyle(node).fontSize), '48px');
   pass('editing the next text or font leaves the current broadcast unchanged');
 
+  async function pasteInbox(plain, html = '') {
+    await page.locator('#inbox-open').click();
+    await page.locator('#bulk-text').evaluate((input, payload) => {
+      input.focus(); input.select(); const data = new DataTransfer();
+      data.setData('text/plain', payload.plain); data.setData('text/html', payload.html);
+      input.dispatchEvent(new ClipboardEvent('paste', {clipboardData: data, bubbles: true, cancelable: true}));
+    }, {plain, html});
+    await page.locator('#bulk-analyse').click();
+  }
+  const beforeImport = structuredClone((await get()).state);
+  await pasteInbox(safariInbox);
+  assert.deepEqual(await page.locator('.bulk-candidate textarea').evaluateAll(nodes => nodes.map(node => node.value)), safariLetters);
+  assert(await page.locator('#bulk-add').isDisabled());
+  await page.locator('#bulk-select-new').click(); assert.equal(await page.locator('#bulk-add').textContent(), '2件を一覧に登録');
+  await page.screenshot({path: path.join(artifacts, 'inbox-safari-sample.png')});
+  await page.locator('#bulk-add').click(); await until(() => page.locator('#bulk-dialog').evaluate(node => !node.open), 'Safari sample import did not save'); await saved();
+  assert.deepEqual((await get()).state.items.slice(-2).map(item => item.text), safariLetters);
+  assert.deepEqual((await get()).state.live, beforeImport.live);
+  await page.locator('#undo').click(); await saved(); assert.deepEqual((await get()).state, beforeImport);
+  pass('the user Safari sample can be reviewed, selected, saved to the correct OBS source, and undone together without changing the aired letter');
+
+  // Exercise native browser copy/paste, not a hand-written ClipboardEvent.
+  // The layout fixture tests hrefs without relying on class/data attributes;
+  // it does not claim to reproduce the current logged-in inbox DOM.
+  const clipboardPage = await context.newPage();
+  await clipboardPage.setContent(`<nav>受信箱</nav>
+    <a data-obscene-word-target="content" href="https://marshmallow-qa.com/messages/00000000-0000-0000-0000-000000000001">質問A。<br><br>画像ダウンロードという言葉も本文です。</a>
+    <a data-obscene-word-target="content" href="https://marshmallow-qa.com/messages/00000000-0000-0000-0000-000000000002">質問B。</a>
+    <a href="https://marshmallow-qa.com/messages/00000000-0000-0000-0000-000000000001/card.png">画像ダウンロード</a>
+    <a href="https://marshmallow-qa.com/messages/00000000-0000-0000-0000-000000000001/answers/1">回答</a>
+    <a href="https://example.invalid/messages/00000000-0000-0000-0000-000000000001">他サイト</a>`);
+  await clipboardPage.keyboard.press('Control+a'); await clipboardPage.keyboard.press('Control+c');
+  await clipboardPage.evaluate(() => {
+    const input = document.createElement('textarea'); document.body.append(input); input.focus();
+    input.addEventListener('paste', event => { window.copiedInbox = {plain: event.clipboardData.getData('text/plain'), html: event.clipboardData.getData('text/html')}; event.preventDefault(); });
+  });
+  await clipboardPage.keyboard.press('Control+v');
+  const nativeCopy = await clipboardPage.evaluate(() => window.copiedInbox); await clipboardPage.close();
+  assert(nativeCopy.html.includes('href="https://marshmallow-qa.com/messages/'));
+  await pasteInbox(nativeCopy.plain, nativeCopy.html);
+  assert.deepEqual(await page.locator('.bulk-candidate textarea').evaluateAll(nodes => nodes.map(node => node.value)), ['質問A。\n\n画像ダウンロードという言葉も本文です。', '質問B。']);
+  await page.keyboard.press('Escape'); assert.deepEqual((await get()).state, beforeImport);
+  pass('native Chromium copy/paste recognises question links without relying on classes or data attributes; body text survives while image/answer and foreign links are excluded');
+  const foreignRequests = [];
+  const trackImportRequests = request => { if (!request.url().startsWith(origin) && !request.url().startsWith('data:')) foreignRequests.push(request.url()); };
+  context.on('request', trackImportRequests);
+  await pasteInbox('受信箱\n画像ダウンロード\nコピーしたページの原文', `<nav>受信箱・画像ダウンロード</nav>
+    <div class="message-card__text">この編集はまだ配信には出ません。</div>
+    <div class="message-card__text">ゲームの質問です。<br><br>次の行<img alt="😊" src="https://example.invalid/emoji.png"><script>window.clipboardExecuted=true</script></div>
+    <div class="message-card__text">今回は登録しない質問</div>
+    <div class="message-card__text">ゲームの質問です。<br><br>次の行😊</div>
+    <div class="message-card__text"><iframe src="https://example.invalid/frame"></iframe></div>
+    <img src="https://example.invalid/tracking.png">`);
+  const candidates = page.locator('.bulk-candidate');
+  assert.equal(await candidates.count(), 5);
+  assert.equal(await candidates.nth(1).locator('textarea').inputValue(), 'ゲームの質問です。\n\n次の行😊');
+  assert(await candidates.nth(0).locator('.bulk-candidate-status').textContent().then(text => text.includes('同じ本文')));
+  assert(!(await candidates.nth(0).locator('input').isChecked()));
+  assert(!(await candidates.nth(3).locator('input').isChecked()));
+  assert(await candidates.nth(4).locator('input').isDisabled());
+  assert.equal(await page.evaluate(() => window.clipboardExecuted), undefined);
+  await candidates.nth(2).locator('input').uncheck();
+  const reviewedText = '確認画面で編集しました。\n\n本文に「画像ダウンロード」と書いても残ります。';
+  await candidates.nth(1).locator('textarea').fill(reviewedText);
+  assert.equal(await page.locator('#bulk-add').textContent(), '1件を一覧に登録');
+  await page.screenshot({path: path.join(artifacts, 'inbox-import.png')});
+  await page.setViewportSize({width: 390, height: 844});
+  assert(await page.locator('#bulk-dialog').evaluate(node => node.scrollWidth <= node.clientWidth + 1));
+  assert(await page.locator('#bulk-dialog').evaluate(node => { const r = node.getBoundingClientRect(); return r.left >= 0 && r.right <= innerWidth && r.top >= 0 && r.bottom <= innerHeight; }));
+  await page.screenshot({path: path.join(artifacts, 'inbox-import-narrow.png')}); await page.setViewportSize({width: 1440, height: 1050});
+  assert.deepEqual((await get()).state, beforeImport, 'review changed persistent state');
+  await page.locator('#bulk-add').click(); await until(() => page.locator('#bulk-dialog').evaluate(node => !node.open), 'import did not finish saving'); await saved();
+  const imported = (await get()).state;
+  assert.equal(imported.items.length, beforeImport.items.length + 1);
+  assert.equal(imported.items.at(-1).text, reviewedText); assert.deepEqual(imported.live, beforeImport.live);
+  assert.equal(await display.locator('.letter-text').textContent(), first);
+  await page.locator('#undo').click(); await saved(); assert.deepEqual((await get()).state, beforeImport);
+  await pasteInbox('受信箱\n画像ダウンロード\n質問の本文\n回答する');
+  assert.equal(await candidates.count(), 1); assert.equal(await candidates.locator('textarea').inputValue(), '受信箱\n画像ダウンロード\n質問の本文\n回答する');
+  assert(!(await candidates.locator('input').isChecked())); assert(await page.locator('#bulk-add').isDisabled());
+  const toSplit = '前半の質問。\n\n後半の質問。'; await candidates.locator('textarea').fill(toSplit);
+  await candidates.locator('input').check();
+  await candidates.locator('textarea').evaluate(node => { node.focus(); node.setSelectionRange(8, 8); node.dispatchEvent(new Event('select')); });
+  await candidates.locator('.bulk-split').click();
+  assert.equal(await candidates.count(), 2); assert.equal((await candidates.locator('textarea').evaluateAll(nodes => nodes.map(node => node.value))).join(''), toSplit);
+  await page.keyboard.press('Escape'); assert.deepEqual((await get()).state, beforeImport);
+  context.off('request', trackImportRequests); assert.deepEqual(foreignRequests, []);
+  pass('clipboard import isolates text and emoji in inert markup; edit/select/save/undo preserve broadcast and paragraphs without external requests');
+  pass('unrecognised copies retain every line, start unselected, can be split at the cursor, and cancel without saving');
+
+  await pasteInbox('新しい質問', '<div class="message-card__text">あとから登録される質問</div>');
+  const lateEnvelope = await get(), lateState = structuredClone(lateEnvelope.state);
+  const postedLate = await fetch(`${origin}/api/state/${connection.sourceId}`, {method: 'POST', headers: {...auth, 'Content-Type': 'application/json'},
+    body: JSON.stringify({expectedRevision: lateEnvelope.revision, state: {...lateState, items: [...lateState.items, {id: 'late-import', text: 'あとから登録される質問', done: false}]}})});
+  assert.equal(postedLate.status, 200);
+  await until(async () => !(await candidates.locator('input').isChecked()), 'later duplicate was still selected');
+  assert(await page.locator('#bulk-add').isDisabled()); await page.keyboard.press('Escape');
+  const restoreEnvelope = await get();
+  assert.equal((await fetch(`${origin}/api/state/${connection.sourceId}`, {method: 'POST', headers: {...auth, 'Content-Type': 'application/json'},
+    body: JSON.stringify({expectedRevision: restoreEnvelope.revision, state: lateState})})).status, 200);
+  await until(async () => (await page.locator('#queue-count').textContent()) === String(beforeImport.items.length), 'late duplicate cleanup did not reach panel');
+  await pasteInbox('本文', '<div class="message-card__text">別ソースには登録しない質問</div>');
+  const otherSourceId = sources.sources.find(source => source.id !== connection.sourceId).id;
+  const otherBeforeImport = structuredClone((await get(otherSourceId)).state);
+  await page.locator('#source-picker').evaluate((select, id) => { select.value = id; select.dispatchEvent(new Event('change')); }, otherSourceId);
+  await until(async () => await page.evaluate(id => new URL(location.href).searchParams.get('source') === id, otherSourceId) && !(await page.locator('#bulk-dialog').evaluate(node => node.open)), 'source switch retained import dialog');
+  assert.deepEqual((await get(otherSourceId)).state, otherBeforeImport);
+  await page.locator('#source-picker').selectOption(connection.sourceId);
+  await until(async () => (await page.locator('#draft-text').inputValue()) === beforeImport.draft.text, 'source return did not finish');
+  pass('late-arriving duplicates are excluded from default selection; source changes cancel review without importing into another source');
+
+  await page.locator('.import-menu').evaluate(node => { node.open = true; }); await page.locator('#bulk-open').click();
+  await page.locator('#bulk-text').fill('一段落目。\r\n\r\n二段落目。\r\n---\r\nもう一件。'); await page.locator('#bulk-analyse').click();
+  assert.equal(await candidates.count(), 2); assert.equal(await candidates.nth(0).locator('textarea').inputValue(), paragraphs);
+  await page.locator('#bulk-back').click(); await page.locator('#bulk-text').fill('---\n///'); await page.locator('#bulk-analyse').click();
+  assert(await page.locator('#bulk-add').isDisabled()); await page.keyboard.press('Escape');
+  await pasteInbox('URL', '<div class="message-card__text">https://marshmallow-qa.com/messages/example</div><div class="message-card__text">' + 'あ'.repeat(12001) + '</div>');
+  assert(await candidates.nth(0).locator('input').isDisabled()); assert(await candidates.nth(1).locator('input').isDisabled());
+  await candidates.nth(1).locator('textarea').fill('短く編集した本文'); await candidates.nth(1).locator('input').check();
+  assert.equal(await page.locator('#bulk-add').textContent(), '1件を一覧に登録'); await page.keyboard.press('Escape');
+  await page.locator('.import-menu').evaluate(node => { node.open = false; });
+  pass('existing delimiter imports preserve CRLF paragraphs; empty, URL-only and overlong candidates require correction before registration');
+
   await page.locator('#new-letter').click();
   const long = ('「日本語のお便り」です。句読点や括弧を自然に折り返し、読みやすい文字サイズを保ちます。' +
     'OBS Studio 123、ゲームのお話。👨‍👩‍👧‍👦 👍🏽 e\u0301 か\u3099\n\n').repeat(9);
@@ -84,8 +224,12 @@ try {
   assert.equal(pageInfo.pages.join(''), long); assert(pageInfo.pages.length > 2);
   for (const size of pageInfo.widths) { assert(size.height <= size.limit + .1); assert(size.width <= size.limitWidth + 1); }
   for (const chunk of pageInfo.pages) { assert(!/^[\u0301\u3099\u200d\uFE0F]/.test(chunk)); assert(!chunk.endsWith('\u200d')); }
-  await page.locator('#show-letter').click(); await until(async () => (await get()).renderedLiveRevision === (await get()).liveRevision, 'browser did not acknowledge long letter');
+  await page.locator('#show-letter').click(); await until(async () => {
+    const result = await get();
+    return result.state.live.text === long && result.state.live.title === '長いお便り' && result.renderedLiveRevision === result.liveRevision;
+  }, 'browser did not acknowledge the new long letter');
   await until(async () => (await stats()).visible, 'native output remained hidden');
+  await until(async () => (await page.locator('#live-title').textContent()) === '長いお便り', 'operation panel did not identify the new long letter');
   assert.equal(await page.locator('#live-title').textContent(), '長いお便り');
   assert((await page.locator('#live-excerpt').textContent()).startsWith('「日本語のお便り」です。'));
   assert.equal(await page.locator('#live-next').textContent(), '次のページ →');
@@ -339,6 +483,7 @@ try {
   await until(async () => (await get()).scrollMax > 0 && (await get()).renderedLiveRevision === (await get()).liveRevision, 'scroll layout not acknowledged');
   await until(async () => (await display.locator('.letter-text').textContent()) === scrollingText, 'scroll mode lost text');
   const scrollRevision = (await get()).liveRevision;
+  await page.locator('#preview-scroll').waitFor({state: 'visible'});
   await page.locator('#preview-scroll').focus(); await page.locator('#preview-scroll').press('End');
   assert.equal((await get()).state.live.scroll, 0);
   await page.screenshot({path: path.join(artifacts, 'live-scroll.png'), fullPage: true});

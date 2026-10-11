@@ -35,6 +35,7 @@
         <div class="queue-tools"><button id="move-up" class="small" aria-label="選択中のお便りを上へ">↑ 上へ</button><button id="move-down" class="small" aria-label="選択中のお便りを下へ">↓ 下へ</button><button id="toggle-done" class="small">紹介済み</button></div>
         <div class="queue-delete-actions"><button id="delete-letter" class="small danger-soft">選択中の1件を削除</button><button id="delete-bulk-open" class="small" aria-haspopup="dialog">まとめて削除</button></div>
         <div class="queue-footer"><button id="undo" class="text-button" disabled>一覧の操作を戻す</button></div>
+        <div class="inbox-entry"><button id="inbox-open" class="primary-soft" aria-haspopup="dialog">受信箱から取り込む</button><p>コピーしたお便りを確認して一括登録</p></div>
         <details class="import-menu"><summary>取り込み・バックアップ</summary><div><button id="bulk-open">まとめて貼り付け</button><button id="import-open">テキスト / JSONから追加</button><button id="export">バックアップを書き出す</button><button id="restore-open">バックアップを復元</button></div></details>
         <input id="import-file" type="file" accept=".txt,.json,text/plain,application/json" hidden><input id="restore-file" type="file" accept=".json,application/json" hidden>
         <p class="queue-help">並べ替えは「上へ・下へ」または左端のハンドルで。本文の編集は表示中のお便りに影響しません。</p>
@@ -74,7 +75,26 @@
       </aside>
     </div>
   </main>
-  <dialog id="bulk-dialog"><form method="dialog"><div class="dialog-heading"><h2>お便りをまとめて登録</h2><button aria-label="閉じる" value="cancel">×</button></div><p>お便りの間に、<strong>単独の行で <code>---</code></strong> を入れてください。本文内の空行は段落として残ります。</p><textarea id="bulk-text" placeholder="1件目のお便り&#10;---&#10;2件目のお便り"></textarea><div class="dialog-actions"><button value="cancel">キャンセル</button><button type="button" id="bulk-add" class="primary">一覧に追加</button></div></form></dialog>
+  <dialog id="bulk-dialog" aria-labelledby="bulk-heading"><form method="dialog">
+    <div class="dialog-heading"><h2 id="bulk-heading">お便りをまとめて取り込む</h2><button aria-label="取り込みを閉じる" value="cancel">×</button></div>
+    <p class="bulk-target">登録先：<strong id="bulk-source"></strong></p>
+    <ol class="bulk-steps" aria-label="取り込みの手順"><li id="bulk-input-step" aria-current="step">1 貼り付け</li><li id="bulk-review-step">2 内容を確認</li></ol>
+    <div id="bulk-input">
+      <label class="bulk-label" for="bulk-mode">貼り付ける内容</label><select id="bulk-mode"><option value="inbox">マシュマロの受信箱・未確認の一覧</option><option value="separated">本文を --- または /// で区切ったもの</option></select>
+      <ol id="bulk-help"><li>マシュマロで「受信箱 → もらったメッセージ → 未確認」を開きます。お便りはクリックせず、一覧のままにします。</li><li>一覧の外の余白をクリックし、<span id="bulk-copy-shortcut">Ctrl＋A → Ctrl＋C</span>でページ全体をコピーします。</li><li>下に貼り付けて「内容を確認」へ進み、本文・改行・件数を確認してください。</li></ol>
+      <label class="bulk-label" for="bulk-text">コピーした内容</label><textarea id="bulk-text" aria-describedby="bulk-help" placeholder="受信箱からコピーした内容を、ここに貼り付けてください。"></textarea>
+      <p class="bulk-unsaved">確認中の内容はまだ保存されません。「一覧に登録」を押すとOBSに保存します。</p>
+      <div class="dialog-actions"><button value="cancel">キャンセル</button><button type="button" id="bulk-analyse" class="primary">内容を確認 →</button></div>
+    </div>
+    <div id="bulk-review" hidden>
+      <p id="bulk-method" role="status"></p>
+      <div class="bulk-selection-tools"><span>取り込むものにチェック</span><button type="button" id="bulk-select-new" class="small">重複以外を選ぶ</button><button type="button" id="bulk-clear" class="small">すべて外す</button></div>
+      <ol id="bulk-candidates" class="bulk-candidates" aria-label="取り込むお便りの確認"></ol>
+      <p class="bulk-unsaved">本文はここで編集できます。同じ本文は最初の選択から外しています。必要ならチェックして登録できます。</p>
+      <div class="bulk-footer"><span id="bulk-count" role="status">0件を選択</span><div class="dialog-actions"><button type="button" id="bulk-back">← 貼り付けに戻る</button><button type="button" id="bulk-add" class="primary" disabled>0件を一覧に登録</button></div></div>
+    </div>
+    <p id="bulk-error" class="bulk-error" role="alert" hidden></p>
+  </form></dialog>
   <dialog id="delete-dialog" aria-labelledby="delete-heading"><form method="dialog">
     <div class="dialog-heading"><h2 id="delete-heading">お便りをまとめて削除</h2><button aria-label="削除の確認を閉じる" value="cancel">×</button></div>
     <label class="delete-scope-label" for="delete-scope">削除するお便り</label><select id="delete-scope"><option value="selected">選んだお便り</option><option value="done">紹介済みのお便り</option><option value="all">一覧のすべて</option></select>
