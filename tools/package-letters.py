@@ -11,7 +11,7 @@ import zipfile
 ROOT = Path(__file__).resolve().parent.parent
 FILES = (
     "jp-letters.lua", "runtime/http.lua", "runtime/fonts.lua", "runtime/webfonts.lua", "web/control.html", "web/display.html",
-    "web/core.js", "web/control.js", "web/display.js", "web/themes.js", "web/style.css",
+    "web/core.js", "web/control.js", "web/display.js", "web/themes.js", "web/imports.js", "web/style.css",
     "package.json", "README.md", "はじめに.txt", "samples/お便りサンプル.txt",
 )
 
