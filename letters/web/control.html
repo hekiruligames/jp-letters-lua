@@ -13,6 +13,10 @@
   <div id="notice" class="notice" role="alert" hidden></div>
   <div id="empty-setup" class="setup" hidden><span aria-hidden="true">✉</span><h2>OBSにお便りソースを追加してください</h2><p>ソースの「＋」から「日本語お便りテキスト（マシュマロ向け）」を選ぶと、ここに表示されます。</p></div>
   <main id="app" hidden>
+    <section class="save-panel" aria-labelledby="save-heading">
+      <div class="save-panel-copy"><div class="save-panel-heading"><h2 id="save-heading">準備の保存・読み込み</h2><span id="save-status" class="save-status" role="status" data-state="saved">OBSに保存済み</span></div><p>入力中の下書きや設定はOBSに自動保存します。次回は同じソースの操作画面を開くと、続きから使えます。</p></div>
+      <div class="save-file-tools"><div class="save-file-actions" role="group" aria-label="準備した内容をファイルで保存・読み込み"><button id="export" class="primary-soft" aria-describedby="save-file-help"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M4 15v5h16v-5"/></svg>ファイルに保存</button><button id="restore-open" aria-describedby="save-file-help"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M12 16V4m-4 4 4-4 4 4M4 15v5h16v-5"/></svg>ファイルから読み込み</button></div><p id="save-file-help">お便り・下書き・表示設定・画面の配色をまとめたJSONファイル。読み込みは現在の一覧と設定を置き換えます。</p></div>
+    </section>
     <section id="live-panel" class="live-panel" aria-labelledby="live-heading">
       <div class="live-panel-heading"><div class="live-heading-title"><svg class="live-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="2.5" y="3.5" width="19" height="13" rx="2"/><path d="M8 21h8M12 16.5V21"/></svg><h2 id="live-heading">配信画面を操作</h2></div><span id="live-status" class="live-badge">非表示</span></div>
       <p class="live-panel-help">このエリアの操作は、OBSの表示にすぐ反映されます。</p>
@@ -36,7 +40,7 @@
         <div class="queue-delete-actions"><button id="delete-letter" class="small danger-soft">選択中の1件を削除</button><button id="delete-bulk-open" class="small" aria-haspopup="dialog">まとめて削除</button></div>
         <div class="queue-footer"><button id="undo" class="text-button" disabled>一覧の操作を戻す</button></div>
         <div class="inbox-entry"><button id="inbox-open" class="primary-soft" aria-haspopup="dialog">受信箱から取り込む</button><p>コピーしたお便りを確認して一括登録</p></div>
-        <details class="import-menu"><summary>取り込み・バックアップ</summary><div><button id="bulk-open">まとめて貼り付け</button><button id="import-open">テキスト / JSONから追加</button><button id="export">バックアップを書き出す</button><button id="restore-open">バックアップを復元</button></div></details>
+        <details class="import-menu"><summary>ほかの方法で取り込む</summary><div><button id="bulk-open">まとめて貼り付け</button><button id="import-open">テキスト / JSONから追加</button></div></details>
         <input id="import-file" type="file" accept=".txt,.json,text/plain,application/json" hidden><input id="restore-file" type="file" accept=".json,application/json" hidden>
         <p class="queue-help">並べ替えは「上へ・下へ」または左端のハンドルで。本文の編集は表示中のお便りに影響しません。</p>
       </aside>
@@ -48,7 +52,7 @@
         <div class="editor"><label for="draft-title">管理用のメモ <span class="optional">任意</span></label><input id="draft-title" maxlength="100" placeholder="例：ゲームの質問、最近の出来事">
           <div class="editor-label"><label for="draft-text">お便りの本文</label><span id="character-count" class="subtle">0文字</span></div>
           <textarea id="draft-text" maxlength="12000" placeholder="マシュマロの本文をここに貼り付けてください。&#10;改行や段落を保ったまま表示できます。"></textarea>
-          <div class="editor-bottom"><span id="save-status" class="subtle" role="status">OBSに保存済み</span><div class="editor-actions"><button id="save-draft">一覧に保存</button><button id="hide-editor" class="danger-soft">非表示</button><button id="show-letter" class="primary">このお便りを配信に表示 <kbd id="show-shortcut">Alt ↵</kbd></button></div></div>
+          <div class="editor-bottom"><div class="editor-actions"><button id="save-draft">一覧に保存</button><button id="hide-editor" class="danger-soft">非表示</button><button id="show-letter" class="primary">このお便りを配信に表示 <kbd id="show-shortcut">Alt ↵</kbd></button></div></div>
         </div>
       </section>
       <aside class="settings-panel panel" aria-label="表示の設定">
@@ -104,7 +108,7 @@
     <p id="delete-draft-note" class="delete-draft-note" hidden>入力中のお便りも削除の対象です。</p>
     <div class="delete-footer"><span id="delete-count" role="status">0件を選択</span><div class="dialog-actions"><button value="cancel">キャンセル</button><button type="button" id="delete-confirm" class="danger-soft" disabled>0件を削除</button></div></div>
   </form></dialog>
-  <dialog id="ui-theme-dialog"><form method="dialog"><div class="dialog-heading"><h2>操作画面の配色</h2><button aria-label="配色の設定を閉じる" value="close">×</button></div><p>この画面の見た目を変えます。配信に表示するカードの配色は変わりません。</p><div id="ui-theme-presets" class="ui-theme-presets" role="group" aria-label="操作画面の配色プリセット"></div><h3>カスタム</h3><div class="ui-custom"><label>画面の背景<input id="ui-background" type="color"></label><label>パネル<input id="ui-panel" type="color"></label><label>アクセント<input id="ui-accent" type="color"></label><label>文字<input id="ui-text" type="color"></label></div><p id="ui-contrast" class="field-help"></p><p class="field-help">お便り・表示設定と一緒に、左のメニューからバックアップできます。</p><div class="dialog-actions"><button value="close">閉じる</button></div></form></dialog>
+  <dialog id="ui-theme-dialog"><form method="dialog"><div class="dialog-heading"><h2>操作画面の配色</h2><button aria-label="配色の設定を閉じる" value="close">×</button></div><p>この画面の見た目を変えます。配信に表示するカードの配色は変わりません。</p><div id="ui-theme-presets" class="ui-theme-presets" role="group" aria-label="操作画面の配色プリセット"></div><h3>カスタム</h3><div class="ui-custom"><label>画面の背景<input id="ui-background" type="color"></label><label>パネル<input id="ui-panel" type="color"></label><label>アクセント<input id="ui-accent" type="color"></label><label>文字<input id="ui-text" type="color"></label></div><p id="ui-contrast" class="field-help"></p><p class="field-help">画面上部の「ファイルに保存」で、お便りや表示設定と一緒に保管できます。</p><div class="dialog-actions"><button value="close">閉じる</button></div></form></dialog>
   <div id="toast" class="toast" role="status" aria-live="polite" hidden></div>
 </body>
 </html>

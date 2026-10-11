@@ -19,6 +19,10 @@ async function until(test, message, timeout = 8000) {
 }
 async function get(id = connection.sourceId) { const r = await fetch(`${origin}/api/state/${id}`, {headers: auth}); assert.equal(r.status, 200); return r.json(); }
 async function stats() { return JSON.parse(await fs.readFile(path.join(artifacts, 'native-stats.json'), 'utf8')); }
+async function nativeRequest(name, action) {
+  const target = path.join(artifacts, name), temporary = `${target}.tmp`;
+  await fs.writeFile(temporary, action); await fs.rename(temporary, target);
+}
 const browser = await chromium.launch({executablePath: process.env.LETTERS_CHROMIUM || '/usr/bin/chromium', headless: true, args: ['--no-sandbox', '--disable-dev-shm-usage']});
 const context = await browser.newContext({viewport: {width: 1440, height: 1050}});
 context.setDefaultTimeout(10000);
@@ -245,7 +249,7 @@ try {
   await page.locator('#live-next').click(); await saved(); assert.equal((await get()).state.live.page, beforePage + 1);
   await until(async () => await display.locator('.letter-text').textContent() === pageInfo.pages[1], 'page button did not update rendered text');
   const outline = await display.locator('.letter-text').evaluate(node => getComputedStyle(node).fontSize); assert.equal(outline, '52px');
-  await fs.writeFile(path.join(artifacts, 'hotkey.request'), 'previous');
+  await nativeRequest('hotkey.request', 'previous');
   await until(async () => (await get()).state.live.page === 0, 'OBS hotkey did not change page');
   await until(async () => (await display.locator('.letter-text').textContent()) === pageInfo.pages[0], 'hotkey did not update browser page');
   assert.equal((await stats()).hotkeys, 6);
@@ -340,15 +344,64 @@ try {
   assert.equal((await get()).state.items.length, 4);
   pass('bulk deletion preserves an unregistered draft and never includes letters that arrived after review');
 
-  await page.locator('.import-menu summary').click();
+  await page.locator('#draft-title').fill('次の配信で読むお便り'); await saved();
+  const preparedState = (await get()).state;
+  const resumeContext = await browser.newContext({viewport: {width: 1440, height: 1050}});
+  const resumedPanel = await resumeContext.newPage();
+  await resumedPanel.goto(connection.control); await resumedPanel.locator('#app').waitFor({state: 'visible'});
+  assert.equal(await resumedPanel.locator('#draft-title').inputValue(), preparedState.draft.title);
+  assert.equal(await resumedPanel.locator('#draft-text').inputValue(), preparedState.draft.text);
+  assert.equal(await resumedPanel.locator('#queue-count').textContent(), String(preparedState.items.length));
+  assert.equal(await resumedPanel.locator('#save-status').textContent(), 'OBSに保存済み');
+  const saveBounds = await resumedPanel.getByRole('region', {name: '準備の保存・読み込み'}).boundingBox();
+  const liveBounds = await resumedPanel.locator('#live-panel').boundingBox();
+  assert(saveBounds.y < liveBounds.y);
+  assert(await resumedPanel.getByRole('button', {name: 'ファイルに保存', exact: true}).isVisible());
+  assert(await resumedPanel.getByRole('button', {name: 'ファイルから読み込み', exact: true}).isVisible());
+  assert.equal(await resumedPanel.locator('.import-menu').getAttribute('open'), null);
+  await resumedPanel.screenshot({path: path.join(artifacts, 'preparation-save-load.png')});
+  await resumedPanel.locator('.save-panel').screenshot({path: path.join(artifacts, 'preparation-save-load-controls.png')});
+  await resumeContext.close();
+  pass('a fresh browser context resumes the prepared draft, notes and queue from OBS; save/load controls and saved status appear above live controls without opening a menu');
+
   const downloadPromise = page.waitForEvent('download'); await page.locator('#export').click();
   const download = await downloadPromise, backupPath = await download.path(), backup = JSON.parse(await fs.readFile(backupPath, 'utf8'));
+  assert.match(download.suggestedFilename(), /^お便りバックアップ-\d{4}-\d{2}-\d{2}-\d{6}\.json$/);
   assert.equal(backup.items.length, 4); assert.equal(backup.live.visible, true);
-  page.once('dialog', dialog => dialog.accept());
-  await page.locator('#restore-file').setInputFiles({name: 'バックアップ.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(backup))});
+  assert.deepEqual(backup, preparedState);
+  assert.deepEqual((await get()).state.live, preparedState.live);
+  const backupFile = {name: 'バックアップ.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(backup))};
+  const cancelledRead = new Promise(resolve => page.once('dialog', async dialog => { await dialog.dismiss(); resolve(); }));
+  const chooseFile = page.waitForEvent('filechooser'); await page.locator('#restore-open').click();
+  await (await chooseFile).setFiles(backupFile);
+  await cancelledRead;
+  await until(() => page.locator('#restore-file').evaluate(input => !input.value), 'cancelled file input was not cleared');
+  assert.deepEqual((await get()).state, preparedState);
+  const confirmedRead = new Promise(resolve => page.once('dialog', async dialog => { await dialog.accept(); resolve(); }));
+  await page.locator('#restore-file').setInputFiles(backupFile);
+  await confirmedRead;
   await saved(); await until(async () => !(await get()).state.live.visible, 'restoring backup did not hide output');
-  assert.equal((await get()).state.items.length, 4);
-  pass('backup export includes drafts and settings; restore keeps content and requires deliberate display');
+  assert.deepEqual((await get()).state, {...backup, live: {...backup.live, visible: false}});
+  pass('visible save/load buttons export complete preparation with local date/time; cancelling leaves all state intact, and confirmed loading hides aired output until deliberate display');
+
+  const offlinePanel = await context.newPage();
+  await offlinePanel.goto(connection.control); await offlinePanel.locator('#app').waitFor({state: 'visible'});
+  await offlinePanel.route('**/api/state/**', route => route.request().method() === 'POST' ? route.abort() : route.continue());
+  const beforeOffline = (await get()).state;
+  await offlinePanel.locator('#draft-title').fill('接続が切れても保管したいメモ');
+  await until(async () => (await offlinePanel.locator('#save-status').textContent()) === 'OBSに未保存・再試行中', 'failed autosave was not made visible');
+  assert.equal(await offlinePanel.locator('#save-status').getAttribute('data-state'), 'error');
+  const offlineDownload = offlinePanel.waitForEvent('download'); await offlinePanel.locator('#export').click();
+  const offlineBackup = JSON.parse(await fs.readFile(await (await offlineDownload).path(), 'utf8'));
+  assert.equal(offlineBackup.draft.title, '接続が切れても保管したいメモ');
+  assert.deepEqual(offlineBackup.items, beforeOffline.items); assert.deepEqual(offlineBackup.style, beforeOffline.style);
+  assert.deepEqual((await get()).state, beforeOffline);
+  await offlinePanel.unroute('**/api/state/**');
+  await until(async () => (await offlinePanel.locator('#save-status').textContent()) === 'OBSに保存済み', 'autosave did not recover');
+  assert.equal((await get()).state.draft.title, offlineBackup.draft.title);
+  await until(async () => (await page.locator('#draft-title').inputValue()) === offlineBackup.draft.title, 'main panel did not receive recovered state');
+  await offlinePanel.close();
+  pass('failed autosave shows an unsaved status; file saving preserves the latest local input without an OBS write, and reconnection returns to saved status');
 
   const envelope = await get();
   const conflict = await fetch(`${origin}/api/state/${connection.sourceId}`, {method: 'POST', headers: {...auth, 'Content-Type': 'application/json'}, body: JSON.stringify({expectedRevision: -100, state: envelope.state})});
@@ -364,6 +417,9 @@ try {
   await until(async () => (await stalePanel.locator('#save-status').textContent()) === '入力をこの画面に保持しています', 'stale panel did not preserve conflicting input');
   assert.equal((await get()).state.draft.title, 'こちらの画面で保存したメモ');
   assert.equal(await stalePanel.locator('#draft-title').inputValue(), '競合した画面の未保存入力');
+  const conflictDownload = stalePanel.waitForEvent('download'); await stalePanel.locator('#export').click();
+  const conflictBackup = JSON.parse(await fs.readFile(await (await conflictDownload).path(), 'utf8'));
+  assert.equal(conflictBackup.draft.title, '競合した画面の未保存入力');
   await stalePanel.close();
   pass('stale operation windows preserve conflicting input without overwriting; multiple sources have separate queues');
 
@@ -490,7 +546,7 @@ try {
   await page.locator('#live-next').click(); await saved();
   const firstScroll = (await get()).state.live.scroll; assert(firstScroll > 0 && firstScroll < 1);
   assert.equal((await get()).liveRevision, scrollRevision); assert.equal((await stats()).visible, true);
-  await fs.writeFile(path.join(artifacts, 'hotkey.request'), 'next');
+  await nativeRequest('hotkey.request', 'next');
   await until(async () => (await get()).state.live.scroll > firstScroll, 'OBS hotkey did not scroll down');
   await until(async () => (await page.locator('#live-scroll').inputValue()) === String(Math.round((await get()).state.live.scroll * 1000)), 'panel did not catch hotkey scroll');
   await page.locator('#live-scroll').focus(); await page.locator('#live-scroll').press('End'); await saved();
@@ -542,11 +598,11 @@ try {
   // This makes a source-recreation race deterministic instead of waiting for its poll.
   await page.route('**/api/state/**', route => route.request().method() === 'GET' ?
     route.fulfill({json: beforeRestoreEnvelope}) : route.continue());
-  await fs.writeFile(path.join(artifacts, 'save.request'), 'save');
+  await nativeRequest('save.request', 'save');
   await until(async () => { try { await fs.stat(path.join(artifacts, 'saved-source.json')); return true; } catch { return false; } }, 'native scene save failed');
   const nativeSaved = JSON.parse(await fs.readFile(path.join(artifacts, 'saved-source.json'), 'utf8'));
   assert.deepEqual(JSON.parse(nativeSaved.settings.letter_state), beforeRestore);
-  await fs.writeFile(path.join(artifacts, 'restore.request'), 'restore');
+  await nativeRequest('restore.request', 'restore');
   await until(async () => { try { await fs.stat(path.join(artifacts, 'restored')); return true; } catch { return false; } }, 'native scene restore failed');
   await until(async () => (await get()).renderedLiveRevision === (await get()).liveRevision && (await stats()).visible, 'restored source did not resume after paint');
   assert.deepEqual((await get()).state, beforeRestore);
@@ -555,6 +611,8 @@ try {
   pass('native OBS save/restore keeps state; render readiness and immediate hide remain correct');
 
   await page.setViewportSize({width: 390, height: 844});
+  await page.evaluate(() => scrollTo(0, 0));
+  await page.screenshot({path: path.join(artifacts, 'preparation-save-load-narrow.png')});
   await page.locator('#readingMode').selectOption('scroll'); await page.locator('#show-letter').click(); await saved();
   await page.screenshot({path: path.join(artifacts, 'operation-narrow.png'), fullPage: true});
   await page.locator('#delete-bulk-open').click(); await page.locator('#delete-scope').selectOption('all');
@@ -569,6 +627,8 @@ try {
     await page.setViewportSize({width, height: 844}); await sleep(120);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth); assert.equal(overflow, false, `horizontal overflow at ${width}px`);
     assert(await page.locator('#live-reading-mode').isVisible()); assert(await page.locator('#readingMode').isVisible());
+    const saveButtons = await page.locator('.save-file-actions button').all();
+    for (const button of saveButtons) { const bounds = await button.boundingBox(); assert(bounds.x >= 0 && bounds.x + bounds.width <= width); }
   }
   assert.deepEqual(browserErrors, []);
   pass('desktop and narrow layouts stay usable without horizontal overflow or browser errors');

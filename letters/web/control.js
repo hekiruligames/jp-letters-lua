@@ -7,6 +7,7 @@ const params = new URLSearchParams(location.search), token = params.get('token')
 let sourceId = params.get('source') || '', state = null, revision = -1, metadata = {};
 let persistedStateKey = '';
 let generation = 0, savedGeneration = 0, writing = null, saveTimer, blocked = false;
+let saveFailed = false;
 let previewPage = 0, previewCount = 1, previewError = '', previewSerial = 0, liveCount = 1;
 let previewController;
 let filter = 'all', dragId = null, undoStack = [], toastTimer, liveLayoutKey = '', sourceRefreshAt = 0;
@@ -42,12 +43,14 @@ async function request(path, payload) {
   return response.json();
 }
 function saveStatus() {
-  $('save-status').textContent = blocked ? '入力をこの画面に保持しています' : generation > savedGeneration ? 'OBSに保存中…' : 'OBSに保存済み';
+  const pending = generation > savedGeneration;
+  $('save-status').dataset.state = blocked ? 'blocked' : pending ? saveFailed ? 'error' : 'saving' : 'saved';
+  $('save-status').textContent = blocked ? '入力をこの画面に保持しています' : pending ? saveFailed ? 'OBSに未保存・再試行中' : 'OBSに保存中…' : 'OBSに保存済み';
 }
 function scheduleSave() { clearTimeout(saveTimer); saveTimer = setTimeout(() => { flush().catch(() => {}); }, 160); }
 const stateKey = value => JSON.stringify(Core.normalizeState(value));
 async function flush() {
-  if (blocked) throw new Error('バックアップを書き出してから、操作画面を開き直してください。');
+  if (blocked) throw new Error('「ファイルに保存」で入力を保管してから、操作画面を開き直してください。');
   if (writing) return writing;
   writing = (async () => {
     while (state && savedGeneration < generation) {
@@ -61,15 +64,16 @@ async function flush() {
       }
       if (result.conflict) {
         blocked = true;
-        notice('別の操作画面から更新されました。入力はこの画面に残しています。バックアップを書き出してから、操作画面を開き直してください。');
+        notice('別の操作画面から更新されました。入力はこの画面に残しています。画面上部の「ファイルに保存」で保管してから、操作画面を開き直してください。');
         throw new Error('別の操作画面で更新されています。');
       }
       revision = result.revision; metadata = result; savedGeneration = targetGeneration;
       persistedStateKey = stateKey(result.state);
+      saveFailed = false;
       connection(true); saveStatus(); updateLive();
     }
   })().catch(error => {
-    connection(false); saveStatus();
+    saveFailed = true; connection(false); saveStatus();
     if (!blocked) notice(`保存できていません。入力はこの画面に残しています。${error.message || 'OBSとの接続を確認してください。'}`);
     throw error;
   }).finally(() => { writing = null; });
@@ -274,7 +278,7 @@ async function loadSource(id) {
   const result = await request(`/api/state/${id}`);
   sourceId = id; state = Core.normalizeState(result.state); revision = result.revision; metadata = result;
   persistedStateKey = stateKey(result.state);
-  generation = savedGeneration = 0; blocked = false; undoStack = []; previewPage = 0; liveLayoutKey = '';
+  generation = savedGeneration = 0; blocked = false; saveFailed = false; undoStack = []; previewPage = 0; liveLayoutKey = '';
   previewScroll = 0; fontCustomMode = false; fontOptionsKey = ''; previewStyle = null;
   const url = new URL(location.href); url.searchParams.set('source', id); history.replaceState(null, '', url);
   $('source-picker').value = id; $('app').hidden = false; $('empty-setup').hidden = true;
@@ -645,8 +649,10 @@ $('import-file').addEventListener('change', async () => {
 $('export').addEventListener('click', () => {
   if (!state) return;
   const blob = new Blob([JSON.stringify(state, null, 2)], {type: 'application/json'}), url = URL.createObjectURL(blob);
-  const link = document.createElement('a'); link.href = url; link.download = `お便りバックアップ-${new Date().toISOString().slice(0, 10)}.json`; link.click();
-  setTimeout(() => URL.revokeObjectURL(url), 10000); toast('お便り・表示設定・画面の配色のバックアップを書き出しました。');
+  const now = new Date(), pad = value => String(value).padStart(2, '0');
+  const date = `${now.getFullYear()}-${pad(now.getMonth() + 1)}-${pad(now.getDate())}`, time = `${pad(now.getHours())}${pad(now.getMinutes())}${pad(now.getSeconds())}`;
+  const link = document.createElement('a'); link.href = url; link.download = `お便りバックアップ-${date}-${time}.json`; link.click();
+  setTimeout(() => URL.revokeObjectURL(url), 10000); toast('ファイルのダウンロードを開始しました。入力中の下書きも含めています。保存先はブラウザの設定によります。');
 });
 $('restore-open').addEventListener('click', () => $('restore-file').click());
 $('restore-file').addEventListener('change', async () => {
@@ -655,9 +661,12 @@ $('restore-file').addEventListener('change', async () => {
     if (file.size > 1000000) throw new Error('1MB以内のファイルを選んでください。');
     const parsed = JSON.parse(await file.text()); if (parsed.version !== 1) throw new Error('お便りテキストのバックアップを選んでください。');
     const restored = Core.normalizeState(parsed);
-    if (!confirm('お便りの一覧と表示設定をバックアップで置き換え、配信への表示を非表示にします。続けますか？')) return;
+    if (!confirm('現在のお便り・下書き・表示設定・画面の配色を、選んだファイルの内容に置き換えます。配信への表示は非表示になります。読み込みますか？')) return;
     restored.live.visible = false;
-    mutate(s => Object.assign(s, restored), true); previewPage = 0; await flush(); toast('バックアップを復元しました。表示前にプレビューを確認してください。');
+    if (blocked) throw new Error('「ファイルに保存」で入力を保管してから、操作画面を開き直してください。');
+    previewPage = 0; previewScroll = 0;
+    if (!mutate(s => Object.assign(s, restored), true)) return;
+    await flush(); toast('ファイルから読み込み、OBSに保存しました。配信に表示する前にプレビューを確認してください。');
   } catch (error) { toast(error.message); } finally { $('restore-file').value = ''; }
 });
 document.addEventListener('keydown', event => {
