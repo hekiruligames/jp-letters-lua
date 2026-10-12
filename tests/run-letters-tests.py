@@ -33,6 +33,7 @@ def main():
         return {str(path.relative_to(project / "letters")): hashlib.sha256(path.read_bytes()).hexdigest()
                 for path in sorted(source_files) if path.is_file()}
     checked_sources = source_hashes()
+    subprocess.run([shutil.which("node"), str(project / "tests/letters-marshmallow-style.mjs")], check=True)
     if not args.lifecycle_only:
         subprocess.run([shutil.which("python3"), str(project / "tests/letters-font-policy.py"), str(lua),
                         "--artifacts", str(artifacts)], check=True)
