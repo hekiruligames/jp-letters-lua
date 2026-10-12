@@ -2,11 +2,11 @@
 
 ## 現在の作業一覧（2026-10-12）
 
-最新の配布は[v0.4.1](https://github.com/hekiruligames/jp-letters-lua/releases/tag/v0.4.1)。Issueは完了11件、未完了5件に整理した。利用者の環境はmacOSなので、次はMacのOBSとSafariでの確認を優先する。
+最新の配布は[v0.5.0](https://github.com/hekiruligames/jp-letters-lua/releases/tag/v0.5.0)。Issueは完了12件、未完了5件に整理した。利用者の環境はmacOSなので、次はMacのOBSとSafariでの確認を優先する。
 
 | 優先度 | 状態 | Issue | 次の作業・再開条件 |
 | --- | --- | --- | --- |
-| 最優先 | 実機検証待ち | [#9](https://github.com/hekiruligames/jp-letters-lua/issues/9) | v0.4.1をmacOS＋Safariで確認する。フォント、受信箱のコピペ、保存・再開、配信中の操作、スクリプト削除を確認し、Windowsの確認も別の項目として継続する。 |
+| 最優先 | 実機検証待ち | [#9](https://github.com/hekiruligames/jp-letters-lua/issues/9) | v0.5.0をmacOS＋Safariで確認する。追加機能の表示・保存・復元にはPR #27のMac＋Safari確認報告がある。フォント、受信箱のコピペ、保存・再開、配信中の操作、スクリプト削除を確認し、Windowsの確認も別の項目として継続する。 |
 | 保留 | 調査 | [#8](https://github.com/hekiruligames/jp-letters-lua/issues/8) | URLの直接取り込み。公式API・連携条件と未公開のお便りの扱いを確認できた時点で再開する。手動コピーからの一括登録はv0.4.0で実装済み。 |
 | 保留 | 提案 | [#14](https://github.com/hekiruligames/jp-letters-lua/issues/14) | OBS下部から操作画面を開くボタン。操作の要望が増えた場合に、Luaのホットキー案と比較し、Macでの導入負担・OBS更新時の互換性を検討する。 |
 | 保留 | 提案 | [#20](https://github.com/hekiruligames/jp-letters-lua/issues/20) | 受信箱のお便りをコピーするSafari・Chrome拡張。要望が増えた場合に検討する。採用や実装時期は未定で、既存のコピペ方式を維持する。 |
@@ -24,6 +24,7 @@
 | [#12](https://github.com/hekiruligames/jp-letters-lua/issues/12)・[#13](https://github.com/hekiruligames/jp-letters-lua/issues/13) | お便りの一括削除とリリース公開・ZIP添付 | [v0.3.3](https://github.com/hekiruligames/jp-letters-lua/releases/tag/v0.3.3) |
 | [PR #19](https://github.com/hekiruligames/jp-letters-lua/pull/19) | コピーした受信箱の本文を確認・編集・選択して一括登録する | [v0.4.0](https://github.com/hekiruligames/jp-letters-lua/releases/tag/v0.4.0) |
 | [PR #23](https://github.com/hekiruligames/jp-letters-lua/pull/23) | 保存状況とファイルの保存・読み込みを画面上部へまとめる | [v0.4.1](https://github.com/hekiruligames/jp-letters-lua/releases/tag/v0.4.1) |
+| [#26](https://github.com/hekiruligames/jp-letters-lua/issues/26)・[PR #27](https://github.com/hekiruligames/jp-letters-lua/pull/27) | マシュマロ向け表示、利用者指定の画像、新規ソースの初期値調整 | [v0.5.0](https://github.com/hekiruligames/jp-letters-lua/releases/tag/v0.5.0) |
 
 READMEの導入・取り込み手順と画像、保存・後日の再開の説明もmainへ反映済み。[保存と再開の案内](../README.md#配信前に準備してあとで続きを使う)
 

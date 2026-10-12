@@ -80,8 +80,33 @@ try {
   await page.locator('#draft-text').fill('この編集はまだ配信には出ません。');
   await page.locator('#fontSize').fill('52'); await page.locator('#fontSize').dispatchEvent('change'); await saved();
   assert.deepEqual((await get()).state.live, aired); assert.equal(await display.locator('.letter-text').textContent(), first);
-  assert.equal(await display.locator('.letter-text').evaluate(node => getComputedStyle(node).fontSize), '48px');
+  assert.equal(await display.locator('.letter-text').evaluate(node => getComputedStyle(node).fontSize), '32px');
   pass('editing the next text or font leaves the current broadcast unchanged');
+
+  // Hold an old poll response until a newer local save is acknowledged.
+  // Receiving it must not rewind the revision and block the next edit.
+  const titleBeforeDelayedRead = (await get()).state.draft.title;
+  let releaseDelayedRead, capturedDelayedRead, delayedReadHeld = false;
+  const delayedReadGate = new Promise(resolve => { releaseDelayedRead = resolve; });
+  const delayedReadCaptured = new Promise(resolve => { capturedDelayedRead = resolve; });
+  await page.route('**/api/state/**', async route => {
+    if (route.request().method() === 'GET' && !delayedReadHeld) {
+      delayedReadHeld = true; const response = await route.fetch();
+      capturedDelayedRead(); await delayedReadGate; await route.fulfill({response});
+    } else await route.continue();
+  });
+  await delayedReadCaptured;
+  await page.locator('#draft-title').fill('保存中に届く古い取得結果'); await saved();
+  const oldResponseDone = page.waitForResponse(response => response.url().includes('/api/state/') && response.request().method() === 'GET');
+  releaseDelayedRead(); await oldResponseDone;
+  await page.evaluate(() => new Promise(resolve => requestAnimationFrame(() => requestAnimationFrame(resolve))));
+  await page.locator('#draft-title').fill('取得結果が届いた後も保存できる'); await saved();
+  assert.equal((await get()).state.draft.title, '取得結果が届いた後も保存できる');
+  assert.deepEqual((await get()).state.live, aired);
+  await page.unroute('**/api/state/**');
+  await page.locator('#draft-title').fill(titleBeforeDelayedRead); await saved();
+  pass('a delayed pre-save poll cannot overwrite acknowledged input or cause a false conflict on the next edit');
+
 
   async function pasteInbox(plain, html = '') {
     await page.locator('#inbox-open').click();
@@ -207,8 +232,9 @@ try {
   pass('existing delimiter imports preserve CRLF paragraphs; empty, URL-only and overlong candidates require correction before registration');
 
   await page.locator('#new-letter').click();
-  const long = ('「日本語のお便り」です。句読点や括弧を自然に折り返し、読みやすい文字サイズを保ちます。' +
-    'OBS Studio 123、ゲームのお話。👨‍👩‍👧‍👦 👍🏽 e\u0301 か\u3099\n\n').repeat(9);
+  const long = Array.from({length: 9}, (_, index) => '「日本語のお便り」です。' + `第${index + 1}段落。` +
+    '句読点や括弧を自然に折り返し、読みやすい文字サイズを保ちます。' +
+    'OBS Studio 123、ゲームのお話。👨‍👩‍👧‍👦 👍🏽 e\u0301 か\u3099\n\n').join('');
   await page.locator('#draft-title').fill('長いお便り'); await page.locator('#draft-text').fill(long);
   await page.locator('#save-draft').click(); await saved();
   await until(async () => /全\d+ページ/.test(await page.locator('#preview-info').textContent()), 'long letter was not paginated');
@@ -464,7 +490,7 @@ try {
   assert.equal(await page.locator('#show-shortcut').textContent(), 'Alt ↵');
   pass('host fonts populate the selector; private webfonts render real glyph metrics and valid TTC checksums; typing updates preview immediately; OS shortcut labels differ');
 
-  await page.getByText('カードと表示する情報', {exact: true}).click();
+  await page.locator('#backgroundOpacity').evaluate(node => { node.closest('details').open = true; });
   await page.locator('#backgroundOpacity').focus(); await page.locator('#backgroundOpacity').press('Home'); await saved();
   assert.equal((await get()).state.style.backgroundOpacity, 0);
   const range = await page.locator('#backgroundOpacity').boundingBox();
@@ -484,8 +510,12 @@ try {
 
   const beforeClear = (await get()).state.style;
   await page.locator('[data-theme="clear"]').click(); await saved();
-  assert.deepEqual((await get()).state.style, {...beforeClear, backgroundOpacity: 0, outlineWidth: 8});
-  await page.locator('[data-theme="maro"]').click(); await saved(); assert.equal((await get()).state.style.background, '#fff4f8');
+  assert.deepEqual((await get()).state.style, {...beforeClear, design: 'standard', frameBackgroundOpacity: 0, backgroundOpacity: 0, outlineWidth: 8});
+  const beforeMarshmallow = (await get()).state.style;
+  await page.locator('[data-theme="marshmallow"]').click(); await saved();
+  assert.deepEqual((await get()).state.style, {...beforeMarshmallow, design: 'marshmallow',
+    frameBackground: '#f3969a', frameBackgroundOpacity: 1, background: '#ffffff', backgroundOpacity: 1,
+    textColor: '#000000', outlineWidth: 0, showServiceLabel: true, padding: {top: 16, right: 16, bottom: 64, left: 16}});
   await page.locator('#ui-theme-open').click(); await page.locator('[data-ui-theme="sakura"]').click(); await saved();
   await page.locator('#ui-theme-dialog').getByText('閉じる', {exact: true}).click();
   const beforeReset = (await get()).state;
@@ -494,8 +524,10 @@ try {
   assert.deepEqual(reset.items, beforeReset.items); assert.deepEqual(reset.draft, beforeReset.draft);
   assert.deepEqual(reset.live, beforeReset.live); assert.deepEqual(reset.ui, beforeReset.ui);
   assert.equal(reset.style.font, environment.defaultFont); assert.equal(reset.style.width, 960); assert.equal(reset.style.height, 540);
+  assert.equal(reset.style.fontSize, 32); assert.equal(reset.style.verticalAlign, 'top');
+  assert.deepEqual(reset.style.padding, {top: 16, right: 16, bottom: 16, left: 16});
   assert.equal(reset.style.background, '#ffffff'); assert.equal(reset.style.textColor, '#222222');
-  pass('transparent preset changes only opacity and outline; reset restores display defaults and preserves letters, live text and UI theme');
+  pass('transparent and Marshmallow presets preserve unrelated layout; reset restores 32px/16px/top defaults and preserves letters, live text and UI theme');
 
   await page.locator('[data-frame="1280,720"]').click(); await saved();
   assert.equal((await get()).state.style.height, 720); assert.equal((await get()).state.style.width, 1280);
@@ -587,12 +619,69 @@ try {
   await page.locator('#ui-theme-dialog').getByText('閉じる', {exact: true}).click(); await page.locator('#reset-style').click(); await saved();
   pass('current blue and four pastel themes have readable contrast; custom UI colours are separate, backed up and compatible with old data');
 
-  await page.locator('#fontSize').fill('48'); await page.locator('#fontSize').dispatchEvent('change');
+  await page.locator('#fontSize').fill('32'); await page.locator('#fontSize').dispatchEvent('change');
   await page.locator('#draft-title').fill('ゲーム選びのお便り'); await page.locator('#draft-text').fill('初めて遊ぶ人におすすめのゲームはありますか？\n\n最近の配信で楽しかった場面も、ぜひ教えてください。');
   await page.locator('#show-letter').click(); await saved();
   await until(async () => (await stats()).visible && (await get()).renderedLiveRevision === (await get()).liveRevision, 'final display not ready');
   await page.screenshot({path: path.join(artifacts, 'operation-panel.png'), fullPage: true});
   await display.setViewportSize({width: 960, height: 540}); await display.screenshot({path: path.join(artifacts, 'letter-output.png'), omitBackground: true});
+  const oldStyle = normalizeState({version: 1, style: {fontSize: 48, padding: {top: 40, right: 40, bottom: 40, left: 40}, verticalAlign: 'center'}}).style;
+  assert.equal(oldStyle.fontSize, 48); assert.equal(oldStyle.verticalAlign, 'center');
+  assert.deepEqual(oldStyle.padding, {top: 40, right: 40, bottom: 40, left: 40});
+  const beforeIconLive = structuredClone((await get()).state.live);
+  await page.locator('[data-theme="marshmallow"]').click(); await saved();
+  const iconData = await page.evaluate(() => {
+    const canvas = document.createElement('canvas'); canvas.width = 80; canvas.height = 40;
+    const ctx = canvas.getContext('2d'); ctx.fillStyle = '#3866b5';
+    ctx.beginPath(); ctx.roundRect(0, 0, 80, 40, 12); ctx.fill();
+    ctx.fillStyle = '#ffffff'; ctx.font = '26px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('JP', 40, 29);
+    return canvas.toDataURL('image/png');
+  });
+  const iconFile = {name: 'sample-icon.png', mimeType: 'image/png', buffer: Buffer.from(iconData.split(',')[1], 'base64')};
+  await page.locator('#icon-file').setInputFiles(iconFile);
+  await until(async () => (await get()).state.style.iconData === iconData, 'selected image did not save'); await saved();
+  await until(() => page.locator('#preview-host .letter-icon').evaluate(img => img.complete && img.naturalWidth === 80), 'preview image failed to decode');
+  assert.deepEqual((await get()).state.live, beforeIconLive);
+  assert.equal(await display.locator('.letter-icon').count(), 0);
+  await page.locator('#showServiceLabel').uncheck(); await saved();
+  await until(async () => await page.locator('#preview-host .letter-service-label').count() === 0, 'service label did not hide');
+  await page.locator('#showServiceLabel').check(); await saved();
+  await until(async () => await page.locator('#preview-host .letter-service-label').count() === 1, 'service label did not return');
+  const withIconStyle = structuredClone((await get()).state.style);
+  for (const badFile of [{name: 'bad.svg', mimeType: 'image/svg+xml', buffer: Buffer.from('<svg/>')},
+    {name: 'too-large.png', mimeType: 'image/png', buffer: Buffer.alloc(128 * 1024 + 1)}]) {
+    await page.locator('#icon-file').setInputFiles(badFile); await sleep(300); await saved();
+    assert.deepEqual((await get()).state.style, withIconStyle);
+  }
+  await page.locator('#show-letter').click(); await saved();
+  await until(() => display.locator('.letter-icon').evaluate(img => img.complete && img.naturalWidth === 80), 'aired image failed to decode');
+  const renderedIcon = await display.locator('.letter-frame').evaluate(frame => {
+    const image = frame.querySelector('.letter-icon').getBoundingClientRect(), bounds = frame.getBoundingClientRect();
+    return {ratio: image.width / image.height, centered: Math.abs((image.left + image.right) / 2 - (bounds.left + bounds.right) / 2) < 1,
+      contained: image.bottom <= bounds.bottom && image.top >= bounds.bottom - 64,
+      background: getComputedStyle(frame).backgroundColor, card: getComputedStyle(frame.querySelector('.letter-card')).backgroundColor};
+  });
+  assert.equal(renderedIcon.ratio, 2); assert(renderedIcon.centered && renderedIcon.contained);
+  assert.equal(renderedIcon.background, 'rgb(243, 150, 154)'); assert.equal(renderedIcon.card, 'rgb(255, 255, 255)');
+  pass('old saved layout survives new defaults; image selection previews independently, rejects SVG/oversize files, and renders an aspect-correct centered icon with the Marshmallow preset');
+  const airedIcon = structuredClone((await get()).state.live);
+  const iconDownload = page.waitForEvent('download'); await page.locator('#export').click();
+  const iconBackup = JSON.parse(await fs.readFile(await (await iconDownload).path(), 'utf8'));
+  assert.equal(iconBackup.style.iconData, iconData); assert.equal(iconBackup.live.style.iconData, iconData);
+  await page.locator('#icon-remove').click(); await saved();
+  assert.equal((await get()).state.style.iconData, ''); assert.deepEqual((await get()).state.live, airedIcon);
+  assert.equal(await display.locator('.letter-icon').count(), 1);
+  const iconRestore = new Promise(resolve => page.once('dialog', async dialog => { await dialog.accept(); resolve(); }));
+  await page.locator('#restore-file').setInputFiles({name: 'icon-backup.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(iconBackup))});
+  await iconRestore; await saved();
+  assert.deepEqual((await get()).state, {...iconBackup, live: {...iconBackup.live, visible: false}});
+  await until(async () => !(await stats()).visible, 'icon backup restore did not hide output');
+  await page.locator('#show-letter').click(); await saved();
+  await until(async () => (await stats()).visible && (await get()).renderedLiveRevision === (await get()).liveRevision, 'restored icon output not ready');
+  await until(() => display.locator('.letter-icon').evaluate(img => img.complete && img.naturalWidth === 80), 'restored icon failed to decode');
+  await display.screenshot({path: path.join(artifacts, 'marshmallow-output.png'), omitBackground: true});
+  await page.screenshot({path: path.join(artifacts, 'marshmallow-settings.png'), fullPage: true});
+  pass('icon removal leaves aired output intact; JSON backup restores icon/style and hides output until explicitly shown');
   const beforeRestoreEnvelope = await get(), beforeRestore = beforeRestoreEnvelope.state;
   // Keep the panel on its acknowledged version until the post-restore action.
   // This makes a source-recreation race deterministic instead of waiting for its poll.
