@@ -15,7 +15,7 @@
   <main id="app" hidden>
     <section class="save-panel" aria-labelledby="save-heading">
       <div class="save-panel-copy"><div class="save-panel-heading"><h2 id="save-heading">準備の保存・読み込み</h2><span id="save-status" class="save-status" role="status" data-state="saved">OBSに保存済み</span></div><p>入力中の下書きや設定はOBSに自動保存します。次回は同じソースの操作画面を開くと、続きから使えます。</p></div>
-      <div class="save-file-tools"><div class="save-file-actions" role="group" aria-label="準備した内容をファイルで保存・読み込み"><button id="export" class="primary-soft" aria-describedby="save-file-help"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M4 15v5h16v-5"/></svg>ファイルに保存</button><button id="restore-open" aria-describedby="save-file-help"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M12 16V4m-4 4 4-4 4 4M4 15v5h16v-5"/></svg>ファイルから読み込み</button></div><p id="save-file-help">お便り・下書き・表示設定・画面の配色をまとめたJSONファイル。読み込みは現在の一覧と設定を置き換えます。</p></div>
+      <div class="save-file-tools"><div class="save-file-actions" role="group" aria-label="準備した内容をファイルで保存・読み込み"><button id="export" class="primary-soft" aria-describedby="save-file-help"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M12 3v12m-4-4 4 4 4-4M4 15v5h16v-5"/></svg>ファイルに保存</button><button id="restore-open" aria-describedby="save-file-help"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M12 16V4m-4 4 4-4 4 4M4 15v5h16v-5"/></svg>ファイルから読み込み</button></div><p id="save-file-help">お便り・下書き・表示設定・選んだアイコン画像・画面の配色をまとめたJSONファイル。読み込みは現在の一覧と設定を置き換えます。</p></div>
     </section>
     <section id="live-panel" class="live-panel" aria-labelledby="live-heading">
       <div class="live-panel-heading"><div class="live-heading-title"><svg class="live-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><rect x="2.5" y="3.5" width="19" height="13" rx="2"/><path d="M8 21h8M12 16.5V21"/></svg><h2 id="live-heading">配信画面を操作</h2></div><span id="live-status" class="live-badge">非表示</span></div>
@@ -57,24 +57,35 @@
       </section>
       <aside class="settings-panel panel" aria-label="表示の設定">
         <div class="panel-heading"><h2>表示の設定</h2><span class="prepare-label">準備中</span><button id="reset-style" class="small" title="表示設定だけを初期値に戻す">初期化</button></div><p class="settings-help">ここで変更した見た目は「配信に表示」を押すと反映されます。</p>
-        <div class="themes" role="group" aria-label="配信の配色プリセット"><button data-theme="default" title="白背景・黒文字にする">デフォルト</button><button data-theme="maro" title="マシュマロを参考にした配色にする">マロ</button><button data-theme="clear" title="背景を透明、輪郭を8pxにする。他の設定は変更しない">透過＋輪郭8px</button></div>
+        <div class="themes" role="group" aria-label="配信の表示プリセット"><button data-theme="default" title="標準の白いカードに戻す">デフォルト</button><button data-theme="marshmallow" title="マシュマロ向けに必要な色と余白だけを設定する">マシュマロ向け</button><button data-theme="clear" title="背景を透明、輪郭を8pxにする。他の設定はできるだけ保つ">透過＋輪郭8px</button></div>
         <details class="setting-section" open><summary>文字と配置</summary><div class="setting-body">
           <label for="font">フォント</label><input id="font-search" type="search" placeholder="フォント名から絞り込む" aria-label="フォントを探す"><select id="font" aria-label="フォントを選択"></select><input id="font-custom" maxlength="120" placeholder="フォント名を入力" aria-label="フォント名を入力" hidden><p id="font-help" class="field-help">このPCに入っているフォントを読み込んでいます。</p>
           <div class="field-pair"><label>文字サイズ <span class="unit">px</span><input id="fontSize" type="number" min="16" max="128" step="1"></label><label>行間 <span class="unit">倍</span><input id="lineHeight" type="number" min="1.1" max="2.4" step="0.1"></label></div>
           <div class="field-pair"><label>左右の配置<select id="align"><option value="left">左揃え</option><option value="center">中央揃え</option><option value="right">右揃え</option></select></label><label>上下の配置<select id="verticalAlign"><option value="top">上</option><option value="center">中央</option><option value="bottom">下</option></select></label></div>
           <div class="field-pair colours"><label>文字色<input id="textColor" type="color"></label><label>輪郭の色<input id="outlineColor" type="color"></label></div><label>輪郭の幅 <span class="unit">px</span><input id="outlineWidth" type="number" min="0" max="8" step="0.5"></label>
         </div></details>
-        <details class="setting-section" open><summary>固定する枠と透明な余白</summary><div class="setting-body">
+        <details class="setting-section" open><summary>固定する枠と外側の余白</summary><div class="setting-body">
           <div class="frame-presets" role="group" aria-label="枠のサイズ"><button data-frame="960,540">960 × 540</button><button data-frame="1280,720">720p</button><button data-frame="1920,1080">1080p</button><button id="obs-frame" disabled>OBSと同じ</button></div>
           <div class="field-pair"><label>枠の幅 <span class="unit">px</span><input id="width" type="number" min="320" max="3840"></label><label><span id="height-label">枠の高さ</span><span class="unit">px</span><input id="height" type="number" min="180" max="2160"></label></div>
           <button id="auto-height" class="small" aria-pressed="false">文章に合わせる高さ</button><p class="field-help">オンにすると短文は縮め、長文は指定した高さを上限にします。</p>
-          <p class="field-help">外側の透明な余白。影やグローを描くスペースになります。</p>
+          <p class="field-help">カードの外側に取る余白です。デフォルトでは透明で、マシュマロ向けでは背景色が見えます。</p>
           <div class="field-pair"><label>上 <span class="unit">px</span><input id="padding-top" type="number" min="0" max="4096"></label><label>右 <span class="unit">px</span><input id="padding-right" type="number" min="0" max="4096"></label><label>下 <span class="unit">px</span><input id="padding-bottom" type="number" min="0" max="4096"></label><label>左 <span class="unit">px</span><input id="padding-left" type="number" min="0" max="4096"></label></div>
         </div></details>
-        <details class="setting-section"><summary>カードと表示する情報</summary><div class="setting-body">
-          <label>カードの色<input id="background" type="color"></label><label>カードの不透明度 <output id="opacity-value">94%</output><input id="backgroundOpacity" type="range" min="0" max="100" step="1"></label>
+        <details class="setting-section" open><summary>カードと背景</summary><div class="setting-body">
+          <div class="field-pair colours"><label>外側の色<input id="frameBackground" type="color"></label><label>カードの色<input id="background" type="color"></label></div>
+          <label>外側の不透明度 <output id="frame-opacity-value">0%</output><input id="frameBackgroundOpacity" type="range" min="0" max="100" step="1"></label>
+          <label>カードの不透明度 <output id="opacity-value">100%</output><input id="backgroundOpacity" type="range" min="0" max="100" step="1"></label>
           <div class="field-pair"><label>角の丸み <span class="unit">px</span><input id="radius" type="number" min="0" max="120"></label><label>カード内の余白 <span class="unit">px</span><input id="innerPadding" type="number" min="0" max="128"></label></div>
           <label class="check"><input id="showTitle" type="checkbox">管理用のメモも配信に表示する</label><label class="check"><input id="showPageNumber" type="checkbox">ページ番号・スクロール位置を表示</label>
+        </div></details>
+        <details class="setting-section" open><summary>マシュマロ表示と下中央のアイコン</summary><div class="setting-body icon-settings">
+          <label class="check"><input id="showServiceLabel" type="checkbox">白いカード内に「マシュマロ」を表示する</label>
+          <label class="check"><input id="showIcon" type="checkbox">選んだ画像を下中央に表示する</label>
+          <div class="icon-actions"><button id="icon-open" type="button" class="small">画像を選択</button><button id="icon-remove" type="button" class="small" disabled>画像を外す</button></div>
+          <input id="icon-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden>
+          <div class="icon-selection"><img id="icon-preview" class="icon-preview" alt="" hidden><p id="icon-name" class="field-help">画像は選ばれていません。</p></div>
+          <p class="field-help">PNG・JPEG・WebP・GIFの128KB以内。画像は表示設定に保存され、バックアップにも含まれます。</p>
+          <p class="field-help">マシュマロ公式ロゴはjp-lettersに同梱していません。使う場合は、<a href="https://help.marshmallow-qa.com/%E3%83%AD%E3%82%B4%E7%94%BB%E5%83%8F%E3%81%AE%E5%88%A9%E7%94%A8%E3%81%AB%E3%81%A4%E3%81%84%E3%81%A6-66e2538617c946001d347fd3" target="_blank" rel="noreferrer">公式の「ロゴ画像の利用について」</a>を確認し、自分で取得した画像を選んでください。</p>
         </div></details>
       </aside>
     </div>

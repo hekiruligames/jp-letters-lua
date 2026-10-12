@@ -1,12 +1,15 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
 // Shared state operations and layout for both the operator preview and OBS.
 import {normalizeUI} from './themes.js';
+export const MAX_ICON_DATA_URL = 180000;
 export const DEFAULT_STYLE = Object.freeze({
-  width: 960, height: 540, font: 'Yu Gothic', fontSize: 48, lineHeight: 1.5,
-  padding: { top: 40, right: 40, bottom: 40, left: 40 }, innerPadding: 24,
+  width: 960, height: 540, font: 'Yu Gothic', fontSize: 32, lineHeight: 1.5,
+  padding: { top: 16, right: 16, bottom: 16, left: 16 }, innerPadding: 24,
   textColor: '#222222', outlineColor: '#101827', outlineWidth: 0,
   background: '#ffffff', backgroundOpacity: 1, radius: 24,
-  align: 'left', verticalAlign: 'center', showTitle: false, showPageNumber: true,
+  frameBackground: '#f3969a', frameBackgroundOpacity: 0, design: 'standard',
+  iconData: '', iconName: '', showIcon: false, showServiceLabel: true,
+  align: 'left', verticalAlign: 'top', showTitle: false, showPageNumber: true,
   readingMode: 'pages', autoHeight: false,
 });
 export const clone = value => JSON.parse(JSON.stringify(value));
@@ -14,6 +17,8 @@ const bounded = (value, fallback, min, max) => Number.isFinite(Number(value))
   ? Math.min(max, Math.max(min, Number(value))) : fallback;
 const colour = (value, fallback) => /^#[0-9a-f]{6}$/i.test(value ?? '') ? value : fallback;
 const text = value => typeof value === 'string' ? value.replace(/\r\n?/g, '\n').replace(/\0/g, '') : '';
+const iconData = value => typeof value === 'string' && value.length <= MAX_ICON_DATA_URL &&
+  /^data:image\/(?:png|jpeg|webp|gif);base64,[a-z0-9+/=]+$/i.test(value) ? value : '';
 export const uid = () => globalThis.crypto?.randomUUID?.() ?? `${Date.now().toString(36)}-${Math.random().toString(36).slice(2)}`;
 export function deadlineSignal(milliseconds) {
   if (globalThis.AbortSignal?.timeout) return AbortSignal.timeout(milliseconds);
@@ -23,7 +28,8 @@ export function deadlineSignal(milliseconds) {
 export function normalizeStyle(input = {}) {
   const s = input || {}, d = DEFAULT_STYLE;
   const padding = Object.fromEntries(['top', 'right', 'bottom', 'left'].map(side =>
-    [side, Math.round(bounded(s.padding?.[side], 40, 0, 4096))]));
+    [side, Math.round(bounded(s.padding?.[side], d.padding[side], 0, 4096))]));
+  const image = iconData(s.iconData);
   return {
     width: Math.round(bounded(s.width, d.width, 320, 3840)),
     height: Math.round(bounded(s.height, d.height, 180, 2160)),
@@ -36,6 +42,11 @@ export function normalizeStyle(input = {}) {
     background: colour(s.background, d.background),
     backgroundOpacity: bounded(s.backgroundOpacity, d.backgroundOpacity, 0, 1),
     radius: Math.round(bounded(s.radius, d.radius, 0, 120)),
+    frameBackground: colour(s.frameBackground, d.frameBackground),
+    frameBackgroundOpacity: bounded(s.frameBackgroundOpacity, d.frameBackgroundOpacity, 0, 1),
+    design: s.design === 'marshmallow' ? 'marshmallow' : 'standard',
+    iconData: image, iconName: text(s.iconName).replace(/\n/g, ' ').slice(0, 160), showIcon: !!s.showIcon && !!image,
+    showServiceLabel: s.showServiceLabel !== false,
     align: ['left', 'center', 'right'].includes(s.align) ? s.align : d.align,
     verticalAlign: ['top', 'center', 'bottom'].includes(s.verticalAlign) ? s.verticalAlign : d.verticalAlign,
     showTitle: !!s.showTitle, showPageNumber: s.showPageNumber !== false,
@@ -134,9 +145,16 @@ export function removeItems(state, ids) {
 export const label = item => item.title || item.text.replace(/\s+/g, ' ').slice(0, 28) || '新しいお便り';
 
 export function applyDisplayPreset(style, name) {
-  if (name === 'clear') { style.backgroundOpacity = 0; style.outlineWidth = 8; }
-  else Object.assign(style, name === 'maro' ? {background: '#fff4f8', backgroundOpacity: 1, textColor: '#50333e', outlineWidth: 0} :
-    {background: '#ffffff', backgroundOpacity: 1, textColor: '#222222', outlineWidth: 0});
+  if (name === 'clear') {
+    Object.assign(style, {design: 'standard', frameBackgroundOpacity: 0, backgroundOpacity: 0, outlineWidth: 8});
+  } else if (name === 'marshmallow' || name === 'maro') {
+    Object.assign(style, {design: 'marshmallow', frameBackground: '#f3969a', frameBackgroundOpacity: 1,
+      background: '#ffffff', backgroundOpacity: 1, textColor: '#000000', outlineWidth: 0,
+      showServiceLabel: true, padding: {top: 16, right: 16, bottom: 64, left: 16}});
+  } else {
+    Object.assign(style, {design: 'standard', frameBackgroundOpacity: 0, background: '#ffffff', backgroundOpacity: 1,
+      textColor: '#222222', outlineWidth: 0});
+  }
   return style;
 }
 
@@ -335,7 +353,9 @@ export async function renderLetter(host, value, rawStyle, page = 0, options = {}
   const metrics = style.readingMode === 'scroll' ? await measureText(content, style) : null;
   const scrollMax = metrics ? Math.max(0, metrics.height - g.height) : 0;
   const frame = document.createElement('div'); frame.className = 'letter-frame';
-  frame.style.width = `${style.width}px`; frame.style.height = `${style.height}px`;
+  frame.dataset.design = style.design;
+  Object.assign(frame.style, {width: `${style.width}px`, height: `${style.height}px`,
+    background: rgba(style.frameBackground, style.frameBackgroundOpacity)});
   frame.dataset.scrollMax = String(scrollMax);
   const card = document.createElement('div'); card.className = 'letter-card';
   Object.assign(card.style, {left: `${style.padding.left}px`, top: `${style.padding.top}px`,
@@ -359,7 +379,21 @@ export async function renderLetter(host, value, rawStyle, page = 0, options = {}
       pages.length > 1 ? `${index + 1} / ${pages.length}` : '';
     footer.style.height = `${g.footer}px`; card.append(footer);
   }
-  frame.append(card); host.replaceChildren(frame);
+  if (style.design === 'marshmallow' && style.showServiceLabel) {
+    const service = document.createElement('div'); service.className = 'letter-service-label';
+    service.textContent = 'マシュマロ'; card.append(service);
+  }
+  frame.append(card);
+  if (style.showIcon && style.iconData && style.padding.bottom > 0) {
+    const slot = document.createElement('div'); slot.className = 'letter-icon-slot';
+    slot.style.height = `${style.padding.bottom}px`;
+    const image = document.createElement('img'); image.className = 'letter-icon'; image.alt = '';
+    image.src = style.iconData; image.style.maxHeight = `${Math.max(0, style.padding.bottom - 16)}px`;
+    image.style.maxWidth = `${Math.max(0, Math.min(g.cardWidth, style.padding.bottom * 1.7))}px`;
+    image.addEventListener('error', () => slot.remove(), {once: true});
+    slot.append(image); frame.append(slot);
+  }
+  host.replaceChildren(frame);
   if (style.readingMode === 'scroll') setScroll(frame, value.scroll || 0, false);
   return {pages, page: index, frame, style, scrollMax, viewportHeight: g.height};
 }

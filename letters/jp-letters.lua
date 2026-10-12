@@ -14,7 +14,7 @@ local revision_counter = 0
 local JSON = "application/json; charset=utf-8"
 local default_font = package.config:sub(1, 1) == "\\" and "Yu Gothic" or "YuGothic"
 if require("ffi").os == "Linux" then default_font = "Noto Sans CJK JP" end
-local DEFAULT = [[{"version":1,"items":[],"selectedId":null,"draft":{"id":null,"title":"","text":""},"style":{"width":960,"height":540,"font":"FONT","fontSize":48,"lineHeight":1.5,"padding":{"top":40,"right":40,"bottom":40,"left":40},"innerPadding":24,"textColor":"#222222","outlineColor":"#101827","outlineWidth":0,"background":"#ffffff","backgroundOpacity":1,"radius":24,"align":"left","verticalAlign":"center","showTitle":false,"showPageNumber":true,"readingMode":"pages","autoHeight":false},"live":{"visible":false,"id":null,"title":"","text":"","page":0,"style":null,"scroll":0},"ui":{"preset":"blue","custom":{"background":"#f3f6fa","panel":"#ffffff","accent":"#3468d4","text":"#263349"}}}]]
+local DEFAULT = [[{"version":1,"items":[],"selectedId":null,"draft":{"id":null,"title":"","text":""},"style":{"width":960,"height":540,"font":"FONT","fontSize":32,"lineHeight":1.5,"padding":{"top":16,"right":16,"bottom":16,"left":16},"innerPadding":24,"textColor":"#222222","outlineColor":"#101827","outlineWidth":0,"background":"#ffffff","backgroundOpacity":1,"radius":24,"align":"left","verticalAlign":"top","showTitle":false,"showPageNumber":true,"readingMode":"pages","autoHeight":false},"live":{"visible":false,"id":null,"title":"","text":"","page":0,"style":null,"scroll":0},"ui":{"preset":"blue","custom":{"background":"#f3f6fa","panel":"#ffffff","accent":"#3468d4","text":"#263349"}}}]]
 DEFAULT = DEFAULT:gsub("FONT", default_font)
 
 local function release(value) if value then obs.obs_data_release(value) end end

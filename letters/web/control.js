@@ -120,15 +120,25 @@ function renderInputs() {
   setInput('draft-title', state.draft.title); setInput('draft-text', state.draft.text);
   $('character-count').textContent = `${Array.from(state.draft.text).length.toLocaleString('ja-JP')}文字`;
   for (const key of ['fontSize', 'lineHeight', 'align', 'verticalAlign', 'textColor', 'outlineColor',
-    'outlineWidth', 'width', 'height', 'radius', 'innerPadding', 'background']) setInput(key, state.style[key]);
+    'outlineWidth', 'width', 'height', 'radius', 'innerPadding', 'background', 'frameBackground']) setInput(key, state.style[key]);
   for (const side of ['top', 'right', 'bottom', 'left']) setInput(`padding-${side}`, state.style.padding[side]);
   setInput('backgroundOpacity', Math.round(state.style.backgroundOpacity * 100));
   $('opacity-value').textContent = `${Math.round(state.style.backgroundOpacity * 100)}%`;
   $('backgroundOpacity').style.setProperty('--range-progress', `${state.style.backgroundOpacity * 100}%`);
+  setInput('frameBackgroundOpacity', Math.round(state.style.frameBackgroundOpacity * 100));
+  $('frame-opacity-value').textContent = `${Math.round(state.style.frameBackgroundOpacity * 100)}%`;
+  $('frameBackgroundOpacity').style.setProperty('--range-progress', `${state.style.frameBackgroundOpacity * 100}%`);
   setInput('readingMode', state.style.readingMode); renderFonts();
   $('auto-height').setAttribute('aria-pressed', String(state.style.autoHeight));
   $('height-label').textContent = state.style.autoHeight ? '最大の高さ' : '枠の高さ';
   $('showTitle').checked = state.style.showTitle; $('showPageNumber').checked = state.style.showPageNumber;
+  $('showServiceLabel').checked = state.style.showServiceLabel;
+  $('showIcon').checked = state.style.showIcon; $('showIcon').disabled = !state.style.iconData;
+  $('icon-remove').disabled = !state.style.iconData;
+  const iconPreview = $('icon-preview');
+  iconPreview.hidden = !state.style.iconData;
+  if (state.style.iconData) iconPreview.src = state.style.iconData; else iconPreview.removeAttribute('src');
+  $('icon-name').textContent = state.style.iconData ? `選択中：${state.style.iconName || '画像'}` : '画像は選ばれていません。';
   $('save-draft').disabled = !state.draft.text.trim();
   $('undo').disabled = !undoStack.length;
 }
@@ -446,9 +456,9 @@ $('font-custom').addEventListener('input', () => {
   const family = $('font-custom').value; previewPage = 0; previewScroll = 0;
   if (family.trim()) mutate(s => { s.style.font = family; });
 });
-for (const key of ['fontSize', 'lineHeight', 'align', 'verticalAlign', 'textColor', 'outlineColor', 'outlineWidth', 'width', 'height', 'radius', 'innerPadding', 'background', 'readingMode']) {
+for (const key of ['fontSize', 'lineHeight', 'align', 'verticalAlign', 'textColor', 'outlineColor', 'outlineWidth', 'width', 'height', 'radius', 'innerPadding', 'background', 'frameBackground', 'readingMode']) {
   $(key).addEventListener('change', () => {
-    const value = ['align', 'verticalAlign', 'textColor', 'outlineColor', 'background', 'readingMode'].includes(key) ? $(key).value : Number($(key).value);
+    const value = ['align', 'verticalAlign', 'textColor', 'outlineColor', 'background', 'frameBackground', 'readingMode'].includes(key) ? $(key).value : Number($(key).value);
     previewPage = 0; previewScroll = 0; mutate(s => { s.style[key] = value; });
   });
 }
@@ -456,8 +466,30 @@ for (const side of ['top', 'right', 'bottom', 'left']) $(`padding-${side}`).addE
   const value = Number($(`padding-${side}`).value); previewPage = 0; mutate(s => { s.style.padding[side] = value; });
 });
 $('backgroundOpacity').addEventListener('input', () => { const value = Number($('backgroundOpacity').value) / 100; mutate(s => { s.style.backgroundOpacity = value; }); });
-for (const key of ['showTitle', 'showPageNumber']) $(key).addEventListener('change', () => { const checked = $(key).checked; previewPage = 0; mutate(s => { s.style[key] = checked; }); });
-document.querySelectorAll('[data-theme]').forEach(button => button.addEventListener('click', () => mutate(s => Core.applyDisplayPreset(s.style, button.dataset.theme))));
+$('frameBackgroundOpacity').addEventListener('input', () => { const value = Number($('frameBackgroundOpacity').value) / 100; mutate(s => { s.style.frameBackgroundOpacity = value; }); });
+for (const key of ['showTitle', 'showPageNumber', 'showIcon', 'showServiceLabel']) $(key).addEventListener('change', () => { const checked = $(key).checked; previewPage = 0; mutate(s => { s.style[key] = checked; }); });
+document.querySelectorAll('[data-theme]').forEach(button => button.addEventListener('click', () => {
+  previewPage = 0; previewScroll = 0; mutate(s => Core.applyDisplayPreset(s.style, button.dataset.theme));
+}));
+$('icon-open').addEventListener('click', () => $('icon-file').click());
+$('icon-file').addEventListener('change', async () => {
+  const file = $('icon-file').files[0];
+  if (!file) return;
+  try {
+    if (!['image/png', 'image/jpeg', 'image/webp', 'image/gif'].includes(file.type)) throw new Error('PNG・JPEG・WebP・GIFの画像を選んでください。');
+    if (file.size > 128 * 1024) throw new Error('アイコン画像は128KB以内にしてください。');
+    const data = await new Promise((resolve, reject) => {
+      const reader = new FileReader(); reader.addEventListener('load', () => resolve(reader.result), {once: true});
+      reader.addEventListener('error', () => reject(new Error('画像を読み込めませんでした。')), {once: true}); reader.readAsDataURL(file);
+    });
+    if (typeof data !== 'string' || data.length > Core.MAX_ICON_DATA_URL) throw new Error('アイコン画像が大きすぎます。別の画像を選んでください。');
+    if (mutate(s => { s.style.iconData = data; s.style.iconName = file.name; s.style.showIcon = true; })) toast('アイコン画像を設定しました。配信への表示はまだ変わりません。');
+  } catch (error) { toast(error.message); }
+  finally { $('icon-file').value = ''; }
+});
+$('icon-remove').addEventListener('click', () => {
+  if (mutate(s => { s.style.iconData = ''; s.style.iconName = ''; s.style.showIcon = false; })) toast('アイコン画像を外しました。配信への表示はまだ変わりません。');
+});
 $('reset-style').addEventListener('click', () => {
   previewPage = 0; previewScroll = 0; fontCustomMode = false; fontOptionsKey = '';
   mutate(s => { s.style = Core.normalizeStyle({...Core.DEFAULT_STYLE, font: environment.defaultFont || Core.DEFAULT_STYLE.font}); });
