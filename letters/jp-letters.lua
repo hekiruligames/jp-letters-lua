@@ -1,5 +1,5 @@
 -- SPDX-License-Identifier: GPL-2.0-or-later
--- Japanese letters / Marshmallow-reading source, version 0.4.1.
+-- Japanese letters / Marshmallow-reading source, version 0.5.0.
 local obs = obslua
 local bit = require("bit")
 local ROOT = script_path()
@@ -394,7 +394,7 @@ source.destroy = function(record)
 end
 
 function script_description()
-    return "<h3>日本語お便りテキスト 0.4.1</h3>マシュマロ読み配信などのお便りを、準備・表示・ページ切り替え・スクロールまで扱うソースです。<br><br>ソース追加から「日本語お便りテキスト（マシュマロ向け）」を選び、プロパティの「お便りの操作画面を開く」を押してください。<br><br>コピーした受信箱の確認・一括登録とテキスト／JSONファイルの取り込みに対応します。受信箱の自動取得機能は含みません。"
+    return "<h3>日本語お便りテキスト 0.5.0</h3>マシュマロ読み配信などのお便りを、準備・表示・ページ切り替え・スクロールまで扱うソースです。<br><br>ソース追加から「日本語お便りテキスト（マシュマロ向け）」を選び、プロパティの「お便りの操作画面を開く」を押してください。<br><br>コピーした受信箱の確認・一括登録とテキスト／JSONファイルの取り込みに対応します。受信箱の自動取得機能は含みません。"
 end
 function script_load() ensure_server() end
 function script_properties()

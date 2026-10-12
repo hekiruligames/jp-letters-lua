@@ -310,8 +310,12 @@ async function poll() {
     else if (!writing && generation === savedGeneration && !blocked) {
       if (Date.now() > sourceRefreshAt) { await refreshSources(); sourceRefreshAt = Date.now() + 3000; }
       if (!state) return;
-      const target = sourceId, result = await request(`/api/state/${sourceId}`);
-      if (target !== sourceId || writing || generation !== savedGeneration) return;
+      const target = sourceId, readRevision = revision, readGeneration = generation;
+      const result = await request(`/api/state/${sourceId}`);
+      // A save may finish while this GET is in flight. Its older response must
+      // not replace the newly acknowledged state or rewind the revision.
+      if (target !== sourceId || writing || generation !== savedGeneration ||
+          revision !== readRevision || generation !== readGeneration) return;
       metadata = result;
       if (revision !== result.revision) { state = Core.normalizeState(result.state); revision = result.revision; render(); }
       else updateLive();

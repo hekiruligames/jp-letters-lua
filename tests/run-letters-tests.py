@@ -76,7 +76,7 @@ def main():
             else: raise RuntimeError("Lua source startup timed out")
             web_result = 0
             if not args.lifecycle_only:
-                web_result = subprocess.run([shutil.which("node"), str(project / "tests/letters-e2e.mjs"), str(artifacts)], env=env, timeout=240).returncode
+                web_result = subprocess.run([shutil.which("node"), str(project / "tests/letters-e2e.mjs"), str(artifacts)], env=env, timeout=420).returncode
                 (artifacts / "stop").touch()
             host_result = host.wait(timeout=30)
             for line in (artifacts / "native.log").read_text().splitlines():

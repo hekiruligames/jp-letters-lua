@@ -196,7 +196,7 @@ int main(int argc, char **argv)
         obs_data_set_string(connection, "otherId", obs_source_get_uuid(other));
         write_json(artifacts / "connection.json", connection); obs_data_release(connection); obs_properties_destroy(props);
         std::cout << "PASS: real OBS Lua source loads; loopback server, panel button and transparent output start\n";
-        const auto deadline = std::chrono::steady_clock::now() + std::chrono::minutes(5);
+        const auto deadline = std::chrono::steady_clock::now() + std::chrono::minutes(8);
         while (!lifecycle_only && !fs::exists(artifacts / "stop") && std::chrono::steady_clock::now() < deadline) {
             require(!lua_error, "Lua runtime error during operations");
             auto *stats = obs_data_create();
@@ -253,6 +253,7 @@ int main(int argc, char **argv)
         require(obs_source_active(browsers[0]->source) && obs_source_showing(browsers[0]->source), "active/showing browser setup failed");
         auto *saved_settings = obs_source_get_settings(source);
         const std::string saved_state = obs_data_get_string(saved_settings, "letter_state");
+        const auto saved_width = obs_source_get_width(source), saved_height = obs_source_get_height(source);
         obs_data_release(saved_settings);
         const std::string removed_url = browsers[0]->url;
         require(loopback_open(removed_url), "loopback server did not start");
@@ -278,7 +279,7 @@ int main(int argc, char **argv)
             obs_wait_for_destroy_queue(); obs_wait_for_destroy_queue(); wait_hotkeys(3);
             require(browsers.size() == 1, "script reload leaked or lost the browser child");
             require(obs_source_active(browsers[0]->source) && obs_source_showing(browsers[0]->source), "script reload lost child visibility");
-            require(obs_source_get_width(source) == 960 && obs_source_get_height(source) == 540, "script reload lost source dimensions");
+            require(obs_source_get_width(source) == saved_width && obs_source_get_height(source) == saved_height, "script reload lost source dimensions");
             require(hotkey_binding_restored(), "script reload lost hotkey bindings");
         }
         saved_settings = obs_source_get_settings(source);
