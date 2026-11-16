@@ -11,6 +11,7 @@ assert.equal(standard.verticalAlign, 'top');
 assert.equal(standard.frameBackgroundOpacity, 0);
 assert.equal(standard.showIcon, false);
 assert.equal(standard.showServiceLabel, true);
+assert.equal(standard.serviceLabel, 'マシュマロ'); // Old saves without this setting keep the existing display.
 
 const customised = normalizeStyle({...standard,
   fontSize: 57, lineHeight: 1.8, align: 'right', verticalAlign: 'bottom', radius: 31, innerPadding: 41,
@@ -26,6 +27,14 @@ assert.equal(marshmallow.textColor, '#000000');
 assert.equal(marshmallow.outlineWidth, 0);
 assert.deepEqual(marshmallow.padding, {top: 16, right: 16, bottom: 64, left: 16});
 assert.equal(marshmallow.showServiceLabel, true);
+assert.equal(marshmallow.serviceLabel, 'マシュマロ');
+const originalFooter = normalizeStyle({...marshmallow, serviceLabel: '配信のお便り'});
+applyDisplayPreset(originalFooter, 'marshmallow');
+assert.equal(originalFooter.serviceLabel, '配信のお便り', 'preset must preserve user footer text');
+assert.equal(normalizeStyle({serviceLabel: ''}).serviceLabel, '', 'blank footer hides the label');
+assert.equal(normalizeStyle({serviceLabel: '  タイトル\r\n副題  '}).serviceLabel, 'タイトル 副題');
+assert.equal(normalizeStyle({serviceLabel: 'A'.repeat(100)}).serviceLabel, 'A'.repeat(40));
+assert.equal(normalizeStyle({serviceLabel: '<b>オリジナル</b>'}).serviceLabel, '<b>オリジナル</b>');
 for (const [key, expected] of Object.entries({fontSize: 57, lineHeight: 1.8, align: 'right', verticalAlign: 'bottom',
   radius: 31, innerPadding: 41, showTitle: true, showPageNumber: true, readingMode: 'scroll'})) {
   assert.equal(marshmallow[key], expected, `${key} should survive the Marshmallow preset`);
