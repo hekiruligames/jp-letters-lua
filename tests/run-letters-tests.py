@@ -40,7 +40,7 @@ def main():
     for name in ("stop", "connection.json", "native-stats.json", "save.request", "restore.request", "restored", "saved-source.json", "hotkey.request", "results.json", "failure.png"):
         (artifacts / name).unlink(missing_ok=True)
     executable = artifacts / "letters-host"
-    subprocess.run(["c++", "-std=c++17", "-O1", "-g", "-Wall", "-Wextra", "-Werror",
+    subprocess.run(["c++", "-std=c++17", "-O1", "-g", "-Wall", "-Wextra", "-Werror", "-Wno-error=deprecated-declarations",
                     f"-I{sdk / 'include/obs'}", f"-I{sdk / 'include'}",
                     str(project / "tests/letters-integration.cpp"), f"-L{sdk / 'lib/x86_64-linux-gnu'}",
                     f"-Wl,-rpath,{sdk / 'lib/x86_64-linux-gnu'}", "-lobs", "-ldl", "-o", str(executable)], check=True)

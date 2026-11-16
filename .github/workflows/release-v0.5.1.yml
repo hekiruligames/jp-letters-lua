@@ -3,7 +3,7 @@ name: Publish v0.5.1
 "on":
   push:
     branches: [main]
-    paths: [letters/package.json]
+    paths: [letters/package.json, tests/run-letters-tests.py]
   workflow_dispatch:
 
 permissions: {}
