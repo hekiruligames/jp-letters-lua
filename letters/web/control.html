@@ -78,8 +78,10 @@
           <div class="field-pair"><label>角の丸み <span class="unit">px</span><input id="radius" type="number" min="0" max="120"></label><label>カード内の余白 <span class="unit">px</span><input id="innerPadding" type="number" min="0" max="128"></label></div>
           <label class="check"><input id="showTitle" type="checkbox">管理用のメモも配信に表示する</label><label class="check"><input id="showPageNumber" type="checkbox">ページ番号・スクロール位置を表示</label>
         </div></details>
-        <details class="setting-section" open><summary>マシュマロ表示と下中央のアイコン</summary><div class="setting-body icon-settings">
-          <label class="check"><input id="showServiceLabel" type="checkbox">白いカード内に「マシュマロ」を表示する</label>
+        <details class="setting-section" open><summary>カード下部の文字・アイコン</summary><div class="setting-body icon-settings">
+          <label class="check"><input id="showServiceLabel" type="checkbox">カード下部の文字を表示する</label>
+          <label for="serviceLabel">カード下部に表示する文字</label><input id="serviceLabel" type="text" maxlength="40" placeholder="例：配信のお便り">
+          <p class="field-help">初期値は「マシュマロ」。空欄にすると非表示になります。表示前のプレビューで確認してください。</p>
           <label class="check"><input id="showIcon" type="checkbox">選んだ画像を下中央に表示する</label>
           <div class="icon-actions"><button id="icon-open" type="button" class="small">画像を選択</button><button id="icon-remove" type="button" class="small" disabled>画像を外す</button></div>
           <input id="icon-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif" hidden>

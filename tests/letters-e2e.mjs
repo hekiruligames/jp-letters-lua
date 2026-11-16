@@ -630,6 +630,17 @@ try {
   assert.deepEqual(oldStyle.padding, {top: 40, right: 40, bottom: 40, left: 40});
   const beforeIconLive = structuredClone((await get()).state.live);
   await page.locator('[data-theme="marshmallow"]').click(); await saved();
+  assert.equal(await page.locator('#serviceLabel').inputValue(), 'マシュマロ');
+  const ownFooter = '配信のお便り';
+  await page.locator('#serviceLabel').fill('<b>オリジナル</b>'); await saved();
+  assert.equal(await page.locator('#preview-host .letter-service-label').textContent(), '<b>オリジナル</b>');
+  assert.equal(await page.locator('#preview-host .letter-service-label b').count(), 0, 'footer is text, not HTML');
+  await page.locator('#serviceLabel').fill(''); await saved();
+  await until(async () => await page.locator('#preview-host .letter-service-label').count() === 0, 'blank footer should hide');
+  await page.locator('#serviceLabel').fill(ownFooter); await saved();
+  assert.equal((await get()).state.style.serviceLabel, ownFooter);
+  assert.equal(await page.locator('#preview-host .letter-service-label').textContent(), ownFooter);
+  assert.deepEqual((await get()).state.live, beforeIconLive, 'editing the footer must not alter the on-air snapshot');
   const iconData = await page.evaluate(() => {
     const canvas = document.createElement('canvas'); canvas.width = 80; canvas.height = 40;
     const ctx = canvas.getContext('2d'); ctx.fillStyle = '#3866b5';
@@ -655,6 +666,7 @@ try {
   }
   await page.locator('#show-letter').click(); await saved();
   await until(() => display.locator('.letter-icon').evaluate(img => img.complete && img.naturalWidth === 80), 'aired image failed to decode');
+  assert.equal(await display.locator('.letter-service-label').textContent(), ownFooter);
   const renderedIcon = await display.locator('.letter-frame').evaluate(frame => {
     const image = frame.querySelector('.letter-icon').getBoundingClientRect(), bounds = frame.getBoundingClientRect();
     return {ratio: image.width / image.height, centered: Math.abs((image.left + image.right) / 2 - (bounds.left + bounds.right) / 2) < 1,
@@ -668,9 +680,11 @@ try {
   const iconDownload = page.waitForEvent('download'); await page.locator('#export').click();
   const iconBackup = JSON.parse(await fs.readFile(await (await iconDownload).path(), 'utf8'));
   assert.equal(iconBackup.style.iconData, iconData); assert.equal(iconBackup.live.style.iconData, iconData);
+  assert.equal(iconBackup.style.serviceLabel, ownFooter); assert.equal(iconBackup.live.style.serviceLabel, ownFooter);
   await page.locator('#icon-remove').click(); await saved();
   assert.equal((await get()).state.style.iconData, ''); assert.deepEqual((await get()).state.live, airedIcon);
   assert.equal(await display.locator('.letter-icon').count(), 1);
+  assert.equal(await display.locator('.letter-service-label').textContent(), ownFooter);
   const iconRestore = new Promise(resolve => page.once('dialog', async dialog => { await dialog.accept(); resolve(); }));
   await page.locator('#restore-file').setInputFiles({name: 'icon-backup.json', mimeType: 'application/json', buffer: Buffer.from(JSON.stringify(iconBackup))});
   await iconRestore; await saved();
@@ -679,6 +693,8 @@ try {
   await page.locator('#show-letter').click(); await saved();
   await until(async () => (await stats()).visible && (await get()).renderedLiveRevision === (await get()).liveRevision, 'restored icon output not ready');
   await until(() => display.locator('.letter-icon').evaluate(img => img.complete && img.naturalWidth === 80), 'restored icon failed to decode');
+  assert.equal(await page.locator('#serviceLabel').inputValue(), ownFooter);
+  assert.equal(await display.locator('.letter-service-label').textContent(), ownFooter);
   await display.screenshot({path: path.join(artifacts, 'marshmallow-output.png'), omitBackground: true});
   await page.screenshot({path: path.join(artifacts, 'marshmallow-settings.png'), fullPage: true});
   pass('icon removal leaves aired output intact; JSON backup restores icon/style and hides output until explicitly shown');
