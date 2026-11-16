@@ -133,6 +133,7 @@ function renderInputs() {
   $('height-label').textContent = state.style.autoHeight ? '最大の高さ' : '枠の高さ';
   $('showTitle').checked = state.style.showTitle; $('showPageNumber').checked = state.style.showPageNumber;
   $('showServiceLabel').checked = state.style.showServiceLabel;
+  setInput('serviceLabel', state.style.serviceLabel);
   $('showIcon').checked = state.style.showIcon; $('showIcon').disabled = !state.style.iconData;
   $('icon-remove').disabled = !state.style.iconData;
   const iconPreview = $('icon-preview');
@@ -472,6 +473,10 @@ for (const side of ['top', 'right', 'bottom', 'left']) $(`padding-${side}`).addE
 $('backgroundOpacity').addEventListener('input', () => { const value = Number($('backgroundOpacity').value) / 100; mutate(s => { s.style.backgroundOpacity = value; }); });
 $('frameBackgroundOpacity').addEventListener('input', () => { const value = Number($('frameBackgroundOpacity').value) / 100; mutate(s => { s.style.frameBackgroundOpacity = value; }); });
 for (const key of ['showTitle', 'showPageNumber', 'showIcon', 'showServiceLabel']) $(key).addEventListener('change', () => { const checked = $(key).checked; previewPage = 0; mutate(s => { s.style[key] = checked; }); });
+$('serviceLabel').addEventListener('input', () => {
+  const value = $('serviceLabel').value;
+  mutate(s => { s.style.serviceLabel = value; });
+});
 document.querySelectorAll('[data-theme]').forEach(button => button.addEventListener('click', () => {
   previewPage = 0; previewScroll = 0; mutate(s => Core.applyDisplayPreset(s.style, button.dataset.theme));
 }));
