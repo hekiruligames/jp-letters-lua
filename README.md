@@ -35,7 +35,7 @@ Windows・macOSで同じZIPを使う設計の試作版です。v0.5.0の表示�
 フォルダ内では、次のファイルとフォルダを一緒に保管します。
 
 ```text
-jp-letters-0.5.0/
+jp-letters-0.5.1/
 ├── jp-letters.lua
 ├── runtime/
 └── web/
@@ -265,6 +265,6 @@ Safariの追加フォント制限に対応するため、選んだ書体をPC内
 - `tests/`: OBS LuaとChromiumの検証
 - `tools/package-letters.py`: 配布ZIPの生成
 
-ReleaseへのZIP添付は、GitHub Actionsの **Attach release ZIP** からタグと検証済みSHA-256を指定して実行します。ジョブ用の認証で添付し、ダウンロードしたファイルまで照合します。[公開担当者向けの手順](docs/release-attachment.md)。
+v0.5.1の公開はGitHub Actionsの **Publish v0.5.1** が検証・ZIP作成・Releaseへの添付まで実施します。旧版の配布には手動の **Attach release ZIP** も使用できます。[公開担当者向けの手順](docs/release-attachment.md)。
 
 GPL-2.0-or-later。ソースは配布物にも同梱します。
