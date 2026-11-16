@@ -4,6 +4,12 @@
 
 公開処理にはGitHub Actionsの **Attach release ZIP** を使う。GitHubがジョブ用に発行するリポジトリ専用の `GITHUB_TOKEN` で添付するため、利用者が個人用アクセストークンを作成・保存する必要はない。手動で実行したときだけ動作する。
 
+## v0.5.1の自動公開
+
+v0.5.1では、GitHub Actionsの `Publish v0.5.1` が `letters/package.json` のバージョン更新を伴うmainへのpushで実行される。LinuxのOBS LuaJIT・Chromiumを含む検証が成功した場合にのみ既存の `tools/package-letters.py` でZIPを作成し、GitHubの`GITHUB_TOKEN`を使ってタグとReleaseへ添付する。検証や公開に失敗した場合はReleaseを作成せず、Actionsログで原因を確認する。macOSおよびWindowsでの実機検証が済んだ意味ではない。[v0.5.1の検証条件](validation-v0.5.1.md)
+
+以下は旧版を含む手動の添付手順であり、今後も使用できる。
+
 ## 実行
 
 1. 検証済みZIPを `releases/vX.Y.Z/jp-letters-X.Y.Z.zip` に保存したコミットへタグを付け、Releaseページを作成する。

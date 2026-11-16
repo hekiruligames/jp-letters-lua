@@ -9,10 +9,10 @@
 - 受信箱を丸ごとコピーし、お便りの本文を確認・編集してからまとめて登録できます。
 - お便りを一覧に保存し、管理用のメモを付けて配信前に準備できます。ブラウザやOBSを閉じた後も、保存した準備を再開できます。
 - フォント・文字の大きさ・カードの色・余白を調整できます。
-- 「マシュマロ向け」プリセットでは、マシュマロ向けの色と外側の余白だけをまとめて設定できます。下中央には、利用者が用意した画像を表示できます。
+- 「マシュマロ向け」プリセットでは、マシュマロ向けの色と外側の余白だけをまとめて設定できます。カード下部の薄い文字を自由に変更でき、下中央には利用者が用意した画像を表示できます。
 - 長いお便りはページ送りや手動スクロールで読み進められます。
 
-**[試作版 v0.5.0 をダウンロードする（ZIP）](https://github.com/hekiruligames/jp-letters-lua/releases/download/v0.5.0/jp-letters-0.5.0.zip)**
+**[試作版 v0.5.1 をダウンロードする（ZIP）](https://github.com/hekiruligames/jp-letters-lua/releases/download/v0.5.1/jp-letters-0.5.1.zip)**
 
 配信に表示されるお便りカードの例です。
 
@@ -26,16 +26,16 @@
 
 OBS 30.2以降を用意してください。お便りを入力する操作画面は、OBSと同じPCのChrome・Edge・Safariなどで開きます。PythonやNode.jsの追加インストールは不要です。
 
-Windows・macOSで同じZIPを使う設計の試作版です。LinuxのOBS Lua環境とChromiumで検証しています。v0.5.0の追加機能には、[MacのOBSとSafariで表示・保存・復元を確認した報告](https://github.com/hekiruligames/jp-letters-lua/pull/27)があります。Windowsでの実機確認と、Mac・Safariでの追加フォントや受信箱取り込みなどの確認は継続中です。[検証の範囲](docs/validation-v0.5.0.md)
+Windows・macOSで同じZIPを使う設計の試作版です。v0.5.0の表示・画像・保存機能には[MacのOBSとSafariで確認した報告](https://github.com/hekiruligames/jp-letters-lua/pull/27)があります。v0.5.1の文字変更機能は別途検証対象であり、Mac実機での確認はまだです。Windowsの実機確認も継続中です。[v0.5.1の検証範囲](docs/validation-v0.5.1.md)
 
 ### 1. ZIPを展開し、フォルダごと保管する
 
-上のリンクからZIPをダウンロードして展開します。展開した `jp-letters-0.5.0` フォルダを、使い続ける場所に置いてください。たとえば「ドキュメント」の中に保管できます。
+上のリンクからZIPをダウンロードして展開します。展開した `jp-letters-0.5.1` フォルダを、使い続ける場所に置いてください。たとえば「ドキュメント」の中に保管できます。
 
 フォルダ内では、次のファイルとフォルダを一緒に保管します。
 
 ```text
-jp-letters-0.5.0/
+jp-letters-0.5.1/
 ├── jp-letters.lua
 ├── runtime/
 └── web/
@@ -202,6 +202,12 @@ Safariでコピーした未確認一覧の実データ2件で、本文の抽出�
 
 </details>
 
+## 0.5.1の改善
+
+マシュマロ向け表示の白いカード下部に薄く出る「マシュマロ」を、操作画面の「カード下部に表示する文字」で自由に変更できます（最大40文字）。空欄またはチェックを外すと非表示になり、長い文字は省略表示します。初期値は従来どおり「マシュマロ」で、既存の表示設定や画像アイコンを維持します。文字はプレビューに即時反映され、「このお便りを配信に表示」を押すまで配信中の表示は変わりません。入力値はOBSの自動保存とJSONバックアップに含まれます。
+
+[今回の変更と検証範囲](docs/validation-v0.5.1.md) · [実装PR #29](https://github.com/hekiruligames/jp-letters-lua/pull/29)
+
 ## 0.5.0の改善
 
 「マシュマロ向け」プリセットで、ピンクの外枠・白いカード・黒文字をまとめて設定できます。下中央に利用者が選んだ画像も表示でき、画像はOBSへの保存とバックアップJSONに含まれます。新規ソースは文字サイズ32px、外側の余白16px、左揃え・上揃えで始まります。既存のソースの設定は引き継ぎます。
@@ -259,6 +265,6 @@ Safariの追加フォント制限に対応するため、選んだ書体をPC内
 - `tests/`: OBS LuaとChromiumの検証
 - `tools/package-letters.py`: 配布ZIPの生成
 
-ReleaseへのZIP添付は、GitHub Actionsの **Attach release ZIP** からタグと検証済みSHA-256を指定して実行します。ジョブ用の認証で添付し、ダウンロードしたファイルまで照合します。[公開担当者向けの手順](docs/release-attachment.md)。
+v0.5.1の公開はGitHub Actionsの **Publish v0.5.1** が検証・ZIP作成・Releaseへの添付まで実施します。旧版の配布には手動の **Attach release ZIP** も使用できます。[公開担当者向けの手順](docs/release-attachment.md)。
 
 GPL-2.0-or-later。ソースは配布物にも同梱します。

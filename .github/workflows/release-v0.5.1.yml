@@ -1,0 +1,70 @@
+name: Publish v0.5.1
+
+"on":
+  push:
+    branches: [main]
+    paths: [letters/package.json]
+  workflow_dispatch:
+
+permissions: {}
+
+concurrency:
+  group: publish-jp-letters-v0.5.1
+  cancel-in-progress: false
+
+jobs:
+  release:
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    permissions:
+      contents: write
+    steps:
+      - name: Check out the versioned source
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Confirm the intended version
+        run: |
+          test "$(node -p "require('./letters/package.json').version")" = "0.5.1"
+          test ! -d dist
+      - name: Install OBS Lua and Chromium test dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libobs-dev obs-studio libluajit-5.1-dev luajit xvfb fonts-noto-cjk
+          npm install --no-save playwright
+          npx playwright install --with-deps chromium
+      - name: Run OBS Lua and browser integration tests
+        run: |
+          BROWSER="$(node -e "console.log(require('playwright').chromium.executablePath())")"
+          python3 tests/run-letters-tests.py /usr /usr --artifacts "$RUNNER_TEMP/letters-validation" --chromium "$BROWSER"
+          python3 tests/release-attachment.py
+      - name: Package validated source and verify the ZIP
+        run: |
+          python3 tools/package-letters.py --validation "$RUNNER_TEMP/letters-validation" --output dist
+          sha256sum dist/jp-letters-0.5.1.zip
+          python3 - <<'PY'
+          from pathlib import Path
+          import hashlib, zipfile, json
+          p = Path('dist/jp-letters-0.5.1.zip')
+          with zipfile.ZipFile(p) as z:
+              assert z.testzip() is None
+              manifest = json.loads(z.read('jp-letters-0.5.1/validation.json'))
+              assert manifest['version'] == '0.5.1'
+              assert not manifest['macOSRuntimeTested']
+              assert not manifest['windowsRuntimeTested']
+          print('Verified archive SHA-256:', hashlib.sha256(p.read_bytes()).hexdigest())
+          PY
+      - name: Create the v0.5.1 tag and GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+        run: |
+          if gh release view v0.5.1 >/dev/null 2>&1; then
+            echo 'v0.5.1 already exists: refusing to overwrite a release'
+            exit 1
+          fi
+          gh release create v0.5.1 dist/jp-letters-0.5.1.zip \
+            --target "$GITHUB_SHA" --title "v0.5.1：カード下部の表示文字を編集可能に" \
+            --notes-file docs/releases/v0.5.1.md --latest
+          gh release view v0.5.1 --json tagName,assets,url
