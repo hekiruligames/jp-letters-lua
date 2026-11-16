@@ -8,7 +8,7 @@ export const DEFAULT_STYLE = Object.freeze({
   textColor: '#222222', outlineColor: '#101827', outlineWidth: 0,
   background: '#ffffff', backgroundOpacity: 1, radius: 24,
   frameBackground: '#f3969a', frameBackgroundOpacity: 0, design: 'standard',
-  iconData: '', iconName: '', showIcon: false, showServiceLabel: true,
+  iconData: '', iconName: '', showIcon: false, showServiceLabel: true, serviceLabel: 'マシュマロ',
   align: 'left', verticalAlign: 'top', showTitle: false, showPageNumber: true,
   readingMode: 'pages', autoHeight: false,
 });
@@ -47,6 +47,9 @@ export function normalizeStyle(input = {}) {
     design: s.design === 'marshmallow' ? 'marshmallow' : 'standard',
     iconData: image, iconName: text(s.iconName).replace(/\n/g, ' ').slice(0, 160), showIcon: !!s.showIcon && !!image,
     showServiceLabel: s.showServiceLabel !== false,
+    serviceLabel: typeof s.serviceLabel === 'string'
+      ? Array.from(text(s.serviceLabel).replace(/\s+/g, ' ').trim()).slice(0, 40).join('')
+      : d.serviceLabel,
     align: ['left', 'center', 'right'].includes(s.align) ? s.align : d.align,
     verticalAlign: ['top', 'center', 'bottom'].includes(s.verticalAlign) ? s.verticalAlign : d.verticalAlign,
     showTitle: !!s.showTitle, showPageNumber: s.showPageNumber !== false,
@@ -379,9 +382,9 @@ export async function renderLetter(host, value, rawStyle, page = 0, options = {}
       pages.length > 1 ? `${index + 1} / ${pages.length}` : '';
     footer.style.height = `${g.footer}px`; card.append(footer);
   }
-  if (style.design === 'marshmallow' && style.showServiceLabel) {
+  if (style.design === 'marshmallow' && style.showServiceLabel && style.serviceLabel) {
     const service = document.createElement('div'); service.className = 'letter-service-label';
-    service.textContent = 'マシュマロ'; card.append(service);
+    service.textContent = style.serviceLabel; card.append(service);
   }
   frame.append(card);
   if (style.showIcon && style.iconData && style.padding.bottom > 0) {
