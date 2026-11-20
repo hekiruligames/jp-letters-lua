@@ -17,6 +17,20 @@ let liveMetrics = {scrollMax: 0, viewportHeight: 1};
 let fontListHelp = 'PCのフォント一覧を取得しています。';
 let deleteSession = null, deleteSelection = new Set(), deleteListKey = '';
 let bulkSession = null, bulkDraft = {text: '', html: ''};
+const compactPanelOpen = {queue: false, settings: false, preview: false};
+function toggleCompactPanel(name) {
+  compactPanelOpen[name] = !compactPanelOpen[name];
+  document.body.classList.toggle(`compact-${name}-open`, compactPanelOpen[name]);
+  const button = $(`${name}-toggle`);
+  button.setAttribute('aria-expanded', String(compactPanelOpen[name]));
+  if (name === 'preview') {
+    button.textContent = compactPanelOpen[name] ? 'プレビューを閉じる' : 'プレビューを開く';
+    requestAnimationFrame(scalePreview);
+  } else if (compactPanelOpen[name] && matchMedia('(max-width: 1100px)').matches) {
+    requestAnimationFrame(() => $(`${name}-panel`).scrollIntoView({block: 'start', behavior: 'smooth'}));
+  }
+}
+for (const name of Object.keys(compactPanelOpen)) $(`${name}-toggle`).addEventListener('click', () => toggleCompactPanel(name));
 
 function updateFontHelp(family) {
   const status = Core.fontStatus(family);
@@ -270,6 +284,10 @@ function updateLive() {
   $('live-scroll-row').hidden = !onAir || !scrolling; $('live-scroll').disabled = !onAir || liveMetrics.scrollMax <= 0;
   setInput('live-scroll', Math.round(live.scroll * 1000));
   $('hide-live').disabled = !onAir; $('hide-editor').disabled = !onAir; $('finish-live').disabled = !onAir;
+  const candidate = nextAiredCandidate();
+  $('finish-next-live').disabled = !candidate;
+  $('finish-next-live').textContent = onAir && candidate && candidate.id !== state.draft.id ?
+    '紹介済み → 次を表示' : '紹介済み → 準備中を表示';
   const key = JSON.stringify([live.text, live.style]);
   if (onAir && key !== liveLayoutKey) {
     liveLayoutKey = key;
@@ -383,6 +401,35 @@ for (const id of ['hide-live', 'hide-editor']) $(id).addEventListener('click', (
   mutate(s => { s.live.visible = false; }, false, false); flush().catch(() => {});
 });
 $('finish-live').addEventListener('click', () => { previewPage = 0; previewScroll = 0; mutate(Core.finishLive, true); flush().catch(() => {}); });
+// This is an explicit one-click broadcast action, separate from the safe prepare-only flow.
+// Never replay the completed letter when there is no next item to display.
+function nextAiredCandidate() {
+  if (!state?.live.visible) return null;
+  const prepared = Core.clone(state);
+  Core.finishLive(prepared);
+  return prepared.draft.text.trim() && prepared.draft.id !== state.live.id ? prepared.draft : null;
+}
+let advancing = false;
+async function finishAndShowNext() {
+  if (!state?.live.visible || advancing || blocked) return;
+  const candidate = nextAiredCandidate();
+  if (!candidate) { toast('次に表示できるお便りがありません。「紹介済み → 次を準備」を使ってください。'); return; }
+  const expectedGeneration = generation, expectedSource = sourceId;
+  advancing = true; $('finish-next-live').disabled = true;
+  try {
+    // Resolve pagination and dimensions before modifying the current broadcast.
+    const prepared = await Core.renderLetter(document.createElement('div'), candidate, state.style);
+    if (generation !== expectedGeneration || sourceId !== expectedSource || blocked) {
+      toast('操作中に準備内容が変更されました。内容を確認して再度操作してください。'); return;
+    }
+    previewPage = 0; previewScroll = 0;
+    if (!mutate(s => { Core.finishLive(s); Core.showDraft(s, prepared.style); }, true)) return;
+    await flush();
+    toast('紹介済みにして、次のお便りを配信に表示しました。');
+  } catch (error) { toast(error.message || '次のお便りを表示できませんでした。'); }
+  finally { advancing = false; if (state) updateLive(); }
+}
+$('finish-next-live').addEventListener('click', finishAndShowNext);
 for (const [id, delta] of [['move-up', -1], ['move-down', 1]]) $(id).addEventListener('click', () => {
   mutate(s => Core.moveItem(s, s.selectedId, s.items.findIndex(item => item.id === s.selectedId) + delta), true);
 });
