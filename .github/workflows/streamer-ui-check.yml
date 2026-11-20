@@ -1,0 +1,32 @@
+name: Streamer UI checks
+
+"on":
+  pull_request:
+    paths:
+      - "letters/web/**"
+      - "tests/**"
+      - ".github/workflows/streamer-ui-check.yml"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  browser-obs-tests:
+    runs-on: ubuntu-latest
+    timeout-minutes: 35
+    steps:
+      - name: Check out prototype
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          persist-credentials: false
+      - name: Install OBS Lua and Chromium test dependencies
+        run: |
+          sudo apt-get update
+          sudo DEBIAN_FRONTEND=noninteractive apt-get install -y libobs-dev obs-studio libluajit-5.1-dev luajit xvfb fonts-noto-cjk
+          npm install --no-save playwright
+          npx playwright install --with-deps chromium
+      - name: Test real OBS Lua lifecycle and browser UI
+        run: |
+          BROWSER="$(node -e "console.log(require('playwright').chromium.executablePath())")"
+          python3 tests/run-letters-tests.py /usr /usr --artifacts "$RUNNER_TEMP/letters-ui-tests" --chromium "$BROWSER"
