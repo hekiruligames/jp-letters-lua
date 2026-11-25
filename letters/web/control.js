@@ -7,7 +7,7 @@ const params = new URLSearchParams(location.search), token = params.get('token')
 let sourceId = params.get('source') || '', state = null, revision = -1, metadata = {};
 let persistedStateKey = '';
 let generation = 0, savedGeneration = 0, writing = null, saveTimer, blocked = false;
-let saveFailed = false;
+let saveFailed = false, advancing = false;
 let previewPage = 0, previewCount = 1, previewError = '', previewSerial = 0, liveCount = 1;
 let previewController;
 let filter = 'all', dragId = null, undoStack = [], toastTimer, liveLayoutKey = '', sourceRefreshAt = 0;
@@ -131,6 +131,9 @@ function renderInputs() {
   setInput('readingMode', state.style.readingMode); renderFonts();
   $('auto-height').setAttribute('aria-pressed', String(state.style.autoHeight));
   $('height-label').textContent = state.style.autoHeight ? '最大の高さ' : '枠の高さ';
+  setInput('quick-width', state.style.width); setInput('quick-height', state.style.height);
+  $('quick-height-label').textContent = state.style.autoHeight ? '最大高さ' : '高さ';
+  $('quick-auto-height').setAttribute('aria-pressed', String(state.style.autoHeight));
   $('showTitle').checked = state.style.showTitle; $('showPageNumber').checked = state.style.showPageNumber;
   $('showServiceLabel').checked = state.style.showServiceLabel;
   setInput('serviceLabel', state.style.serviceLabel);
@@ -148,6 +151,7 @@ function renderQueue() {
   const items = state.items.filter(item => (filter === 'all' || (filter === 'done') === item.done) &&
     `${item.title}\n${item.text}`.toLocaleLowerCase().includes(search));
   $('queue-count').textContent = state.items.length;
+  $('queue-progress').textContent = `未紹介 ${state.items.filter(item => !item.done).length} 件 / 全 ${state.items.length} 件`;
   $('queue-empty').hidden = !!items.length;
   $('queue-empty').textContent = state.items.length ? 'この条件に合うお便りはありません。' : 'マシュマロの本文を貼り付けて、最初のお便りを準備しましょう。';
   const nodes = items.map(item => {
@@ -269,7 +273,10 @@ function updateLive() {
   $('live-next').disabled = !onAir || (scrolling ? live.scroll >= 1 || liveMetrics.scrollMax <= 0 : live.page >= liveCount - 1);
   $('live-scroll-row').hidden = !onAir || !scrolling; $('live-scroll').disabled = !onAir || liveMetrics.scrollMax <= 0;
   setInput('live-scroll', Math.round(live.scroll * 1000));
-  $('hide-live').disabled = !onAir; $('hide-editor').disabled = !onAir; $('finish-live').disabled = !onAir;
+  $('hide-live').disabled = !onAir; $('finish-live').disabled = !onAir;
+  const candidate = nextAiredCandidate();
+  $('finish-next-live').disabled = !candidate || advancing || blocked;
+  $('next-label').textContent = onAir ? (candidate ? `次：${Core.label(candidate)}` : '次に表示するお便りはありません') : `準備中：${Core.label(state.draft)}`;
   const key = JSON.stringify([live.text, live.style]);
   if (onAir && key !== liveLayoutKey) {
     liveLayoutKey = key;
@@ -379,10 +386,39 @@ $('preview-viewport').addEventListener('wheel', event => {
   event.preventDefault(); movePreviewScroll(previewScroll + event.deltaY / previewMetrics.scrollMax);
 }, {passive: false});
 $('live-scroll').addEventListener('input', () => { const position = Number($('live-scroll').value) / 1000; mutate(s => { s.live.scroll = position; }, false, false); });
-for (const id of ['hide-live', 'hide-editor']) $(id).addEventListener('click', () => {
+$('hide-live').addEventListener('click', () => {
   mutate(s => { s.live.visible = false; }, false, false); flush().catch(() => {});
 });
 $('finish-live').addEventListener('click', () => { previewPage = 0; previewScroll = 0; mutate(Core.finishLive, true); flush().catch(() => {}); });
+// This is an explicit one-click broadcast action, separate from the safe prepare-only flow.
+// Never replay the completed letter when there is no next item to display.
+function nextAiredCandidate() {
+  if (!state?.live.visible) return null;
+  const prepared = Core.clone(state);
+  Core.finishLive(prepared);
+  return prepared.draft.text.trim() && prepared.draft.id !== state.live.id ? prepared.draft : null;
+}
+async function finishAndShowNext() {
+  if (!state?.live.visible || advancing || blocked) return;
+  const candidate = nextAiredCandidate();
+  if (!candidate) { toast('次に表示できるお便りがありません。「紹介済み → 次を準備」を使ってください。'); return; }
+  const expectedGeneration = generation, expectedSource = sourceId;
+  advancing = true; $('finish-next-live').disabled = true;
+  try {
+    // Resolve pagination and dimensions before modifying the current broadcast.
+    const prepared = await Core.renderLetter(document.createElement('div'), candidate, state.style);
+    if (generation !== expectedGeneration || sourceId !== expectedSource || blocked) {
+      toast('操作中に準備内容が変更されました。内容を確認して再度操作してください。'); return;
+    }
+    previewPage = 0; previewScroll = 0;
+    if (!mutate(s => { Core.finishLive(s); Core.showDraft(s, prepared.style); }, true)) return;
+    await flush();
+    toast('紹介済みにして、次のお便りを配信に表示しました。');
+  } catch (error) { toast(error.message || '次のお便りを表示できませんでした。'); }
+  finally { advancing = false; if (state) updateLive(); }
+}
+$('finish-next-live').addEventListener('click', finishAndShowNext);
+
 for (const [id, delta] of [['move-up', -1], ['move-down', 1]]) $(id).addEventListener('click', () => {
   mutate(s => Core.moveItem(s, s.selectedId, s.items.findIndex(item => item.id === s.selectedId) + delta), true);
 });
@@ -512,7 +548,8 @@ $('obs-frame').addEventListener('click', () => {
   if (environment.canvasWidth > 3840 || environment.canvasHeight > 2160) { toast('この版の枠は3840×2160pxまでです。幅と高さを入力してください。'); return; }
   previewPage = 0; previewScroll = 0; mutate(s => Object.assign(s.style, {width: environment.canvasWidth, height: environment.canvasHeight}));
 });
-$('auto-height').addEventListener('click', () => { previewPage = 0; previewScroll = 0; mutate(s => { s.style.autoHeight = !s.style.autoHeight; }); });
+for (const id of ['auto-height','quick-auto-height']) $(id).addEventListener('click', () => { previewPage = 0; previewScroll = 0; mutate(s => { s.style.autoHeight = !s.style.autoHeight; }); });
+for (const key of ['width','height']) $(`quick-${key}`).addEventListener('change', () => { const value = Number($(`quick-${key}`).value); previewPage = 0; previewScroll = 0; mutate(s => { s.style[key] = value; }); });
 
 for (const [key, theme] of Object.entries(UI_THEMES)) {
   const button = document.createElement('button'); button.type = 'button'; button.dataset.uiTheme = key;
@@ -717,6 +754,7 @@ document.addEventListener('keydown', event => {
   else if (event.altKey && ['ArrowLeft', 'ArrowRight'].includes(event.key) && state.live.visible) { event.preventDefault(); changeLivePage(event.key === 'ArrowRight' ? 1 : -1); }
 });
 new ResizeObserver(scalePreview).observe($('preview-viewport'));
+new ResizeObserver(() => { document.documentElement.style.setProperty('--dock-height', `${$('live-panel').offsetHeight}px`); }).observe($('live-panel'));
 window.addEventListener('beforeunload', event => { if (generation > savedGeneration) { event.preventDefault(); event.returnValue = ''; } });
 const mac = /Mac|iPhone|iPad/.test(navigator.platform || navigator.userAgent);
 $('bulk-copy-shortcut').textContent = mac ? '⌘A → ⌘C' : 'Ctrl＋A → Ctrl＋C';
