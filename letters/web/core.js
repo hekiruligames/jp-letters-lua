@@ -135,6 +135,31 @@ export function moveItem(state, id, destination) {
   state.items.splice(Math.max(0, Math.min(state.items.length, destination)), 0, item);
   return state;
 }
+// Reorder only queue items; retain original relative order within the selected block.
+export function moveItems(state, ids, mode, target = 0) {
+  const selected = new Set(ids);
+  const items = state.items;
+  if (!items.some(item => selected.has(item.id))) return state;
+  if (mode === 'up' || mode === 'down') {
+    const step = mode === 'up' ? -1 : 1;
+    for (let i = step < 0 ? 1 : items.length - 2; i >= 0 && i < items.length; i -= step) {
+      const j = i + step;
+      if (j >= 0 && j < items.length && selected.has(items[i].id) && !selected.has(items[j].id)) {
+        [items[i], items[j]] = [items[j], items[i]];
+      }
+    }
+  } else {
+    const block = items.filter(item => selected.has(item.id));
+    const rest = items.filter(item => !selected.has(item.id));
+    const position = mode === 'first' ? 0 : mode === 'last' ? rest.length :
+      mode === 'before' ? rest.findIndex(item => item.id === target) :
+      mode === 'position' && Number.isInteger(target) ? target : -1;
+    if (position < 0 || position > rest.length) return state;
+    rest.splice(position, 0, ...block);
+    state.items = rest;
+  }
+  return state;
+}
 export function removeItem(state, id) {
   return removeItems(state, [id]);
 }

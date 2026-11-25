@@ -6,13 +6,17 @@ PR #32の試用ではプレビューを隠す、左一覧を隠す、設定を�
 
 | 段階 | 課題 |
 | --- | --- |
-| 1 | [UI第2試作](streamer-preview-ui-20261125.md)：実機確認待ち |
-| 2 | [#33](https://github.com/hekiruligames/jp-letters-lua/issues/33) 専用管理画面・複数選択・一括移動 |
+| 1 | [UI第2試作](streamer-preview-ui-20261125.md)：レイアウト実機確認OK、全機能は未確認 |
+| 2 | [#33](https://github.com/hekiruligames/jp-letters-lua/issues/33) 専用管理画面・複数選択・一括移動（preview.5試作、CI・実機確認待ち） |
 | 3 | [#34](https://github.com/hekiruligames/jp-letters-lua/issues/34) 返答用メモ（管理メモと分離・配信非表示） |
 | 4 | [#35](https://github.com/hekiruligames/jp-letters-lua/issues/35) グループ化・順序・レイアウト |
 | 5 | [#36](https://github.com/hekiruligames/jp-letters-lua/issues/36) お便り別の関連画像・配置・表示 |
 
 紹介済みのUnload/Archiveは#33と関連する保留案。今回は実装しない。旧試作PR #32は比較記録として保存する。
+
+## 2026-11-26：管理画面の試作
+
+preview.3のレイアウトは利用者のMac Safariで問題なしとの報告。CI成功（run 45659826944）。別ブランチfeature/letter-manager-20261126で#33を試作し、他の機能は引き続き保留する。[管理画面の設計と検証](letter-manager-20261126.md)。
 
 ## 現在の作業一覧（2026-11-16）
 

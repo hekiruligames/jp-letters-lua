@@ -17,6 +17,7 @@ let liveMetrics = {scrollMax: 0, viewportHeight: 1};
 let fontListHelp = 'PCのフォント一覧を取得しています。';
 let deleteSession = null, deleteSelection = new Set(), deleteListKey = '';
 let bulkSession = null, bulkDraft = {text: '', html: ''};
+let managerSelection = new Set(), managerKey = '', managerSource = '', managerDrag = null, managerEdit = null;
 
 function updateFontHelp(family) {
   const status = Core.fontStatus(family);
@@ -27,6 +28,7 @@ function updateFontHelp(family) {
 
 function toast(message) {
   $('toast').textContent = message; $('toast').hidden = false;
+  if ($('manager-dialog').open) $('manager-message').textContent = message;
   clearTimeout(toastTimer); toastTimer = setTimeout(() => { $('toast').hidden = true; }, 4000);
 }
 function notice(message = '') { $('notice').textContent = message; $('notice').hidden = !message; }
@@ -187,6 +189,7 @@ function renderQueue() {
   $('toggle-done').textContent = index >= 0 && state.items[index].done ? '未紹介に戻す' : '紹介済み';
   renderDeleteDialog();
   updateBulkSelection();
+  renderManager();
 }
 function scalePreview() {
   if (!state) return;
@@ -290,6 +293,8 @@ function updateLive() {
 function render() { if (state) { renderUI(); renderInputs(); renderQueue(); updateLive(); updatePreview(); } }
 
 async function loadSource(id) {
+  if ($('manager-edit-dialog').open) $('manager-edit-dialog').close();
+  if ($('manager-dialog').open) $('manager-dialog').close();
   if ($('delete-dialog').open) $('delete-dialog').close();
   if ($('bulk-dialog').open) $('bulk-dialog').close();
   if (state && generation > savedGeneration) await flush();
@@ -306,7 +311,7 @@ async function refreshSources() {
   const result = await request('/api/sources'), sources = result.sources.sort((a, b) => a.name.localeCompare(b.name, 'ja'));
   const old = $('source-picker').value;
   $('source-picker').replaceChildren(...sources.map(source => { const option = document.createElement('option'); option.value = source.id; option.textContent = source.name; return option; }));
-  if (!sources.length) { if ($('delete-dialog').open) $('delete-dialog').close(); state = null; sourceId = ''; $('app').hidden = true; $('empty-setup').hidden = false; return; }
+  if (!sources.length) { if ($('manager-edit-dialog').open) $('manager-edit-dialog').close(); if ($('manager-dialog').open) $('manager-dialog').close(); if ($('delete-dialog').open) $('delete-dialog').close(); state = null; sourceId = ''; $('app').hidden = true; $('empty-setup').hidden = false; return; }
   const id = sources.some(source => source.id === sourceId) ? sourceId : sources.some(source => source.id === old) ? old : sources[0].id;
   $('source-picker').value = id;
   if (!state || id !== sourceId) await loadSource(id);
@@ -487,6 +492,165 @@ $('delete-confirm').addEventListener('click', () => {
 $('undo').addEventListener('click', () => { const previous = undoStack.pop(); if (previous) mutate(s => {
   const {live, style, ui} = s; Object.assign(s, Core.clone(previous), {live, style, ui});
 }); });
+
+function managerItems() {
+  if (!state) return [];
+  const search = $('manager-search').value.trim().toLocaleLowerCase('ja'), mode = $('manager-filter').value;
+  return state.items.map(item => item.id === state.draft.id ? {...item, title:state.draft.title,text:state.draft.text} : item)
+    .filter(item => (mode === 'all' || (mode === 'done') === item.done) && (item.title+' '+item.text).toLocaleLowerCase('ja').includes(search));
+}
+function updateManagerSelection() {
+  if (!state || !$('manager-dialog').open) return;
+  const ids = new Set(managerItems().map(item => item.id));
+  for (const id of managerSelection) if (!ids.has(id)) managerSelection.delete(id);
+  const count = managerSelection.size, total = state.items.length;
+  $('manager-count').textContent = `${count}件選択`;
+  $('manager-summary').textContent = `全 ${total} 件 / 未紹介 ${state.items.filter(item => !item.done).length} 件` + (ids.size !== total ? ` / 表示 ${ids.size} 件` : '');
+  $('manager-all').disabled = !ids.size || count === ids.size;
+  $('manager-mark-done').disabled = !count || blocked;
+  $('manager-mark-pending').disabled = !count || blocked;
+  $('manager-delete').disabled = !count || blocked;
+  $('manager-delete-bulk').disabled = !total || blocked;
+  $('manager-clear').disabled = !count;
+  document.querySelectorAll('[data-manager-move]').forEach(button => { button.disabled = !count || count === total || blocked; });
+  const position = $('manager-position'), maximum = Math.max(1,total-count+1);
+  position.max = maximum;
+  if (Number(position.value) > maximum) position.value = maximum;
+  position.disabled = !count || count === total || blocked;
+  $('manager-undo').disabled = !undoStack.length || blocked;
+  for (const row of $('manager-list').children) {
+    const checked = managerSelection.has(row.dataset.id);
+    row.classList.toggle('selected', checked);
+    row.querySelector('input').checked = checked;
+  }
+}
+function renderManager() {
+  if (!state || !$('manager-dialog').open || managerSource !== sourceId) return;
+  const visibleItems = managerItems();
+  const key = JSON.stringify([visibleItems,state.items.map(item=>item.id)]);
+  if (key !== managerKey) {
+    managerKey = key;
+    const list = $('manager-list');
+    list.replaceChildren(...visibleItems.map(item => {
+      const index = state.items.findIndex(entry=>entry.id===item.id);
+      const row = document.createElement('li'); row.className = 'manager-row'; row.dataset.id = item.id;
+      const checkbox = document.createElement('input'); checkbox.type = 'checkbox';
+      checkbox.setAttribute('aria-label', `${index+1}. ${Core.label(item)}を選択`);
+      checkbox.addEventListener('change', () => { if (checkbox.checked) managerSelection.add(item.id); else managerSelection.delete(item.id); updateManagerSelection(); });
+      const handle = document.createElement('button'); handle.className = 'manager-handle'; handle.textContent = '⠿'; handle.draggable = true;
+      handle.setAttribute('aria-label', `${Core.label(item)}をドラッグして移動`);
+      handle.addEventListener('dragstart', event => {
+        if (blocked) { event.preventDefault(); return; }
+        if (!managerSelection.has(item.id)) { managerSelection = new Set([item.id]); updateManagerSelection(); }
+        managerDrag = [...managerSelection]; event.dataTransfer.setData('text/plain', item.id); event.dataTransfer.effectAllowed = 'move';
+      });
+      handle.addEventListener('dragend', () => { managerDrag = null; list.querySelectorAll('.drop-target').forEach(el => el.classList.remove('drop-target')); });
+      row.addEventListener('dragover', event => { if (managerDrag && !managerDrag.includes(item.id)) { event.preventDefault(); row.classList.add('drop-target'); } });
+      row.addEventListener('dragleave', () => row.classList.remove('drop-target'));
+      row.addEventListener('drop', event => { event.preventDefault(); row.classList.remove('drop-target'); if (managerDrag && !managerDrag.includes(item.id)) moveManaged('before',item.id); managerDrag = null; });
+      const number = document.createElement('span'); number.className = 'manager-number'; number.textContent = String(index+1).padStart(2,'0');
+      const content = document.createElement('div'); content.className = 'manager-content';
+      const title = document.createElement('strong'); title.textContent = Core.label(item);
+      const body = document.createElement('p'); body.textContent = item.text;
+      const actions = document.createElement('div'); actions.className = 'manager-row-actions';
+      const edit = document.createElement('button'); edit.textContent = '編集'; edit.addEventListener('click',()=>openManagerEdit(item.id));
+      const prepare = document.createElement('button'); prepare.textContent = '配信の準備'; prepare.addEventListener('click',()=>{ previewPage=0; previewScroll=0; if(mutate(s=>Core.selectItem(s,item.id))) toast('準備中のお便りに設定しました。配信表示は変わりません。'); });
+      actions.append(edit,prepare); content.append(title,body,actions);
+      const status = document.createElement('span'); status.className = 'manager-status'; status.textContent = item.done ? '✓ 紹介済み' : '未紹介';
+      row.append(checkbox,handle,number,content,status); return row;
+    }));
+  }
+  $('manager-empty').hidden = !!visibleItems.length;
+  $('manager-empty').textContent = state.items.length ? '条件に合うお便りはありません。' : 'お便りはありません。';
+  updateManagerSelection();
+}
+function moveManaged(mode, target = 0) {
+  if (!state || blocked || managerSource !== sourceId || !managerSelection.size) return;
+  const ids = [...managerSelection], next = Core.clone(state);
+  Core.moveItems(next,ids,mode,target);
+  if (JSON.stringify(next.items.map(item => item.id)) === JSON.stringify(state.items.map(item => item.id))) {
+    $('manager-message').textContent = '順番は変わりません。'; return;
+  }
+  if (mutate(s => Core.moveItems(s,ids,mode,target),true)) {
+    $('manager-message').textContent = `${ids.length}件を移動しました。`;
+    flush().catch(() => { $('manager-message').textContent = 'OBSに保存できていません。操作画面の保存状況を確認してください。'; });
+  }
+}
+$('manager-open').addEventListener('click', () => {
+  if (!state || blocked) return;
+  managerSource = sourceId; managerSelection.clear(); managerKey = ''; managerDrag = null;
+  $('manager-position').value = 1; $('manager-message').textContent = ''; $('manager-search').value = ''; $('manager-filter').value = 'all';
+  $('manager-dialog').showModal(); renderManager();
+});
+for (const id of ['manager-close','manager-done']) $(id).addEventListener('click', () => $('manager-dialog').close());
+$('manager-dialog').addEventListener('close', () => { managerSelection.clear(); managerKey = ''; managerSource = ''; managerDrag = null; });
+$('manager-all').addEventListener('click', () => { if (state) managerSelection = new Set(managerItems().map(item => item.id)); updateManagerSelection(); });
+$('manager-clear').addEventListener('click', () => { managerSelection.clear(); updateManagerSelection(); });
+document.querySelectorAll('[data-manager-move]').forEach(button => button.addEventListener('click', () => {
+  const mode = button.dataset.managerMove;
+  if (mode === 'position') {
+    const position = $('manager-position');
+    if (!position.value || !position.checkValidity()) { position.reportValidity(); return; }
+    moveManaged(mode,Number(position.value)-1);
+  } else moveManaged(mode);
+}));
+$('manager-undo').addEventListener('click', () => { if (!state || blocked) return; $('undo').click(); $('manager-message').textContent = '直前の一覧操作を戻しました。'; flush().catch(() => { $('manager-message').textContent = 'OBSに保存できていません。'; }); });
+
+
+for (const [id,event] of [['manager-search','input'],['manager-filter','change']]) $(id).addEventListener(event,()=>{managerSelection.clear(); renderManager();});
+for (const [id,target] of [['manager-inbox','inbox-open'],['manager-paste','bulk-open'],['manager-import','import-open'],['manager-export','export'],['manager-restore','restore-open'],['manager-delete-bulk','delete-bulk-open']]) $(id).addEventListener('click',()=>$(target).click());
+$('manager-delete').addEventListener('click',()=>{
+  if (!managerSelection.size || blocked) return;
+  const ids = new Set(managerSelection);
+  $('delete-bulk-open').click();
+  if ($('delete-dialog').open) {deleteSelection=ids; updateDeleteSelection();}
+});
+for (const [id,done] of [['manager-mark-done',true],['manager-mark-pending',false]]) $(id).addEventListener('click',()=>{
+  if (!managerSelection.size || blocked) return;
+  const ids = new Set(managerSelection);
+  if (mutate(s=>{for(const item of s.items) if(ids.has(item.id)) item.done=done;},true)) {
+    toast(ids.size+'件の紹介状態を変更しました。'); flush().catch(()=>{});
+  }
+});
+function openManagerEdit(id=null) {
+  if (!state || blocked || managerSource!==sourceId) return;
+  const item = id ? state.items.find(item=>item.id===id) : null;
+  if (id && !item) return;
+  const original = item && id === state.draft.id ? state.draft : item;
+  managerEdit = {id,source:sourceId,original:original ? {title:original.title,text:original.text} : null};
+  $('manager-edit-heading').textContent = id ? 'お便りを編集' : 'お便りを新規作成';
+  $('manager-edit-title').value = original?.title || '';
+  $('manager-edit-text').value = original?.text || '';
+  $('manager-edit-error').textContent = '';
+  $('manager-edit-dialog').showModal();
+  $('manager-edit-text').focus();
+}
+$('manager-new').addEventListener('click',()=>openManagerEdit());
+for (const id of ['manager-edit-close','manager-edit-cancel']) $(id).addEventListener('click',()=>$('manager-edit-dialog').close());
+$('manager-edit-dialog').addEventListener('close',()=>{managerEdit=null;});
+$('manager-edit-form').addEventListener('submit',event=>{
+  event.preventDefault();
+  if (!managerEdit || blocked || managerEdit.source!==sourceId) return;
+  const {id,original}=managerEdit;
+  const title=$('manager-edit-title').value,text=$('manager-edit-text').value;
+  const error = message => { $('manager-edit-error').textContent=message; };
+  if (!text.trim()) return error('本文を入力してください。');
+  if (/^https?:\/\/(?:www\.)?marshmallow-qa\.com\/\S+\s*$/.test(text)) return error('URLではなく本文を貼り付けてください。');
+  if (!id && state.items.length>=300) return error('お便りは300件まで登録できます。');
+  if (id) {
+    const item=state.items.find(item=>item.id===id), current=id===state.draft.id ? state.draft : item;
+    if (!item || current.title!==original.title || current.text!==original.text) return error('別の操作で内容が変わりました。閉じて開き直してください。');
+  }
+  if (mutate(s=>{
+    if (id) {
+      Object.assign(s.items.find(item=>item.id===id),{title,text});
+      if (s.draft.id===id) Object.assign(s.draft,{title,text});
+    } else s.items.push({id:Core.uid(),title,text,done:false});
+  },true)) {
+    $('manager-edit-dialog').close(); toast('一覧に保存しました。配信中の表示は変わりません。'); flush().catch(()=>{});
+  }
+});
+
 $('font-search').addEventListener('input', () => state && renderFonts());
 $('font').addEventListener('change', () => {
   const family = $('font').value; fontCustomMode = family === '__custom__';
@@ -748,7 +912,7 @@ $('restore-file').addEventListener('change', async () => {
   } catch (error) { toast(error.message); } finally { $('restore-file').value = ''; }
 });
 document.addEventListener('keydown', event => {
-  if ($('bulk-dialog').open || $('ui-theme-dialog').open || $('delete-dialog').open || !state) return;
+  if ($('manager-edit-dialog').open || $('manager-dialog').open || $('bulk-dialog').open || $('ui-theme-dialog').open || $('delete-dialog').open || !state) return;
   if (event.altKey && event.key === 'Enter') { event.preventDefault(); show(); }
   else if (event.key === 'Escape' && state.live.visible) { event.preventDefault(); $('hide-live').click(); }
   else if (event.altKey && ['ArrowLeft', 'ArrowRight'].includes(event.key) && state.live.visible) { event.preventDefault(); changeLivePage(event.key === 'ArrowRight' ? 1 : -1); }
