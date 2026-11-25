@@ -96,17 +96,28 @@
     <div class="manager-shell">
       <div class="dialog-heading"><h2 id="manager-heading">お便り管理</h2><button id="manager-close" aria-label="お便り管理を閉じる">×</button></div>
       <p id="manager-summary" class="manager-summary"></p>
+      <div class="manager-tools" role="group" aria-label="作成・取り込み・保存">
+        <button id="manager-new" class="primary">＋ 新規</button><button id="manager-inbox">受信箱から取り込む</button><button id="manager-paste">まとめて貼り付け</button><button id="manager-import">テキスト / JSONから追加</button><button id="manager-export">ファイルに保存</button><button id="manager-restore">ファイルから読み込み</button>
+      </div>
+      <div class="manager-tools" role="group" aria-label="検索と絞り込み"><input id="manager-search" type="search" placeholder="本文・メモから探す" aria-label="管理画面のお便りを検索"><label>表示 <select id="manager-filter"><option value="all">すべて</option><option value="pending">未紹介</option><option value="done">紹介済み</option></select></label></div>
       <div class="manager-tools" role="group" aria-label="選択と並べ替え">
         <button id="manager-all">すべて選択</button><button id="manager-clear">選択解除</button><span id="manager-count" role="status">0件選択</span>
         <button id="manager-up" data-manager-move="up">↑ 上へ</button><button id="manager-down" data-manager-move="down">↓ 下へ</button>
         <button id="manager-first" data-manager-move="first">先頭へ</button><button id="manager-last" data-manager-move="last">末尾へ</button>
         <label for="manager-position">移動後の先頭位置 <input id="manager-position" type="number" min="1" value="1"></label><button id="manager-move" data-manager-move="position">移動</button>
         <button id="manager-undo">元に戻す</button>
+        <button id="manager-mark-done">紹介済みにする</button><button id="manager-mark-pending">未紹介に戻す</button><button id="manager-delete" class="danger-soft">選択した項目を削除</button><button id="manager-delete-bulk" class="danger-soft">まとめて削除</button>
       </div>
       <p class="manager-help">チェックしたお便りをまとめて移動できます。ハンドルを別のお便りの上へドラッグすると、その直前に移動します。選択内の順序は維持されます。変更はOBSに自動保存され、配信中の表示は変わりません。</p>
       <div class="manager-scroll"><ol id="manager-list" class="manager-list"></ol><p id="manager-empty" hidden>お便りはありません。</p></div>
       <div class="manager-footer"><span id="manager-message" role="status"></span><button id="manager-done" class="primary">配信操作に戻る</button></div>
     </div>
+  </dialog>
+  <dialog id="manager-edit-dialog" aria-labelledby="manager-edit-heading">
+    <form id="manager-edit-form"><div class="dialog-heading"><h2 id="manager-edit-heading">お便りを編集</h2><button type="button" id="manager-edit-close" aria-label="編集を閉じる">×</button></div>
+    <label for="manager-edit-title">管理用のメモ</label><input id="manager-edit-title" maxlength="100">
+    <label for="manager-edit-text">お便りの本文</label><textarea id="manager-edit-text" maxlength="12000" required></textarea>
+    <p id="manager-edit-error" role="status"></p><div class="dialog-actions"><button type="button" id="manager-edit-cancel">キャンセル</button><button type="submit" class="primary">一覧に保存</button></div></form>
   </dialog>
   <dialog id="bulk-dialog" aria-labelledby="bulk-heading"><form method="dialog">
     <div class="dialog-heading"><h2 id="bulk-heading">お便りをまとめて取り込む</h2><button aria-label="取り込みを閉じる" value="cancel">×</button></div>
