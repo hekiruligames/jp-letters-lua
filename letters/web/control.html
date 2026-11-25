@@ -33,7 +33,7 @@
     <div class="workspace">
       <aside class="queue-panel panel" aria-label="お便りの一覧">
         <div class="panel-heading"><h2>お便り <span id="queue-count" class="count">0</span></h2><button id="new-letter" class="small primary-soft">＋ 新規</button></div>
-        <p id="queue-progress" class="queue-progress"></p><input id="search" class="search" type="search" placeholder="本文・メモから探す" aria-label="お便りを検索">
+        <p id="queue-progress" class="queue-progress"></p><div class="manager-entry"><button id="manager-open" class="primary-soft" aria-haspopup="dialog">お便り管理</button></div><input id="search" class="search" type="search" placeholder="本文・メモから探す" aria-label="お便りを検索">
         <div class="filters" role="group" aria-label="一覧の絞り込み"><button data-filter="all" aria-pressed="true">すべて</button><button data-filter="unread" aria-pressed="false">未紹介</button><button data-filter="done" aria-pressed="false">紹介済み</button></div>
         <ol id="queue-list" class="queue-list"></ol><p id="queue-empty" class="queue-empty">マシュマロの本文を貼り付けて、最初のお便りを準備しましょう。</p>
         <div class="queue-tools"><button id="move-up" class="small" aria-label="選択中のお便りを上へ">↑ 上へ</button><button id="move-down" class="small" aria-label="選択中のお便りを下へ">↓ 下へ</button><button id="toggle-done" class="small">紹介済み</button></div>
@@ -92,6 +92,22 @@
       </aside>
     </div>
   </main>
+  <dialog id="manager-dialog" aria-labelledby="manager-heading">
+    <div class="manager-shell">
+      <div class="dialog-heading"><h2 id="manager-heading">お便り管理</h2><button id="manager-close" aria-label="お便り管理を閉じる">×</button></div>
+      <p id="manager-summary" class="manager-summary"></p>
+      <div class="manager-tools" role="group" aria-label="選択と並べ替え">
+        <button id="manager-all">すべて選択</button><button id="manager-clear">選択解除</button><span id="manager-count" role="status">0件選択</span>
+        <button id="manager-up" data-manager-move="up">↑ 上へ</button><button id="manager-down" data-manager-move="down">↓ 下へ</button>
+        <button id="manager-first" data-manager-move="first">先頭へ</button><button id="manager-last" data-manager-move="last">末尾へ</button>
+        <label for="manager-position">移動後の先頭位置 <input id="manager-position" type="number" min="1" value="1"></label><button id="manager-move" data-manager-move="position">移動</button>
+        <button id="manager-undo">元に戻す</button>
+      </div>
+      <p class="manager-help">チェックしたお便りをまとめて移動できます。ハンドルを別のお便りの上へドラッグすると、その直前に移動します。選択内の順序は維持されます。変更はOBSに自動保存され、配信中の表示は変わりません。</p>
+      <div class="manager-scroll"><ol id="manager-list" class="manager-list"></ol><p id="manager-empty" hidden>お便りはありません。</p></div>
+      <div class="manager-footer"><span id="manager-message" role="status"></span><button id="manager-done" class="primary">配信操作に戻る</button></div>
+    </div>
+  </dialog>
   <dialog id="bulk-dialog" aria-labelledby="bulk-heading"><form method="dialog">
     <div class="dialog-heading"><h2 id="bulk-heading">お便りをまとめて取り込む</h2><button aria-label="取り込みを閉じる" value="cancel">×</button></div>
     <p class="bulk-target">登録先：<strong id="bulk-source"></strong></p>
