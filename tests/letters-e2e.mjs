@@ -753,8 +753,9 @@ try {
   await until(async () => (await get()).state.live.id === 'compact-a', 'first compact letter not aired');
   await until(async () => await page.locator('#finish-next-live').isEnabled(), 'advance action did not enable');
   assert.equal(await page.locator('#next-label').textContent(),'次：次');
-  const enabledColor = await page.locator('#finish-next-live').evaluate(el => getComputedStyle(el).backgroundColor);
-  assert.equal(enabledColor,'rgb(24, 121, 78)');
+  // The button transitions from disabled to enabled over 120 ms. Check the settled, non-hovered color.
+  await page.mouse.move(1, 1);
+  await until(async () => (await page.locator('#finish-next-live').evaluate(el => getComputedStyle(el).backgroundColor)) === 'rgb(24, 121, 78)', 'enabled next button did not settle to green');
   await page.evaluate(() => scrollTo(0,document.documentElement.scrollHeight));
   const scrolledAction = await page.locator('#finish-next-live').boundingBox();
   assert(scrolledAction && scrolledAction.y >= 0 && scrolledAction.y + scrolledAction.height <= 760);
