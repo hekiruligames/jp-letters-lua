@@ -323,3 +323,28 @@ button.advance-primary:disabled {background:var(--panel); color:var(--muted); bo
   .prepare-panel {grid-area:prepare; min-width:0;}
   .settings-panel {grid-area:settings; min-width:0;}
 }
+
+/* Queue management occupies its own modal; the proven streaming layout stays unchanged. */
+.manager-entry {padding:0 14px 8px;}
+.manager-entry button {width:100%;font-size:12px;}
+#manager-dialog {width:min(1040px,calc(100vw - 28px));max-height:calc(100dvh - 28px);padding:0;overflow:auto;}
+.manager-shell {display:flex;flex-direction:column;max-height:calc(100dvh - 32px);padding:18px;gap:9px;min-width:0;}
+#manager-dialog .manager-summary,#manager-dialog .manager-help {margin:0;}
+.manager-tools {display:flex;flex-wrap:wrap;gap:6px;align-items:center;padding:8px 0;border-bottom:1px solid var(--line);}
+.manager-tools button {font-size:12px;padding:7px 10px;}
+#manager-count {font-size:12px;font-weight:600;color:var(--muted);padding:0 6px;}
+.manager-tools label {display:flex;align-items:center;gap:5px;font-size:11px;}
+#manager-position {width:68px;min-height:32px;padding:4px 6px;}
+.manager-scroll {min-height:80px;overflow:auto;flex:1;}
+.manager-list {list-style:none;padding:0;margin:0;}
+.manager-row {display:grid;grid-template-columns:20px 30px 32px minmax(0,1fr) 72px;gap:9px;align-items:start;padding:12px 9px;border:1px solid var(--line);border-radius:8px;margin:0 0 6px;}
+.manager-row.selected {background:var(--soft);border-color:var(--accent);}
+.manager-row.drop-target {border-top:3px solid var(--accent);}
+.manager-row input {margin-top:5px;}
+.manager-handle {padding:2px 4px;cursor:grab;font-size:18px;}
+.manager-number,.manager-status {font-size:11px;color:var(--muted);padding-top:4px;}
+.manager-content {min-width:0;overflow-wrap:anywhere;}
+.manager-content strong {font-size:13px;}
+#manager-dialog .manager-content p {white-space:pre-wrap;margin:5px 0 0;color:var(--ink);font-size:13px;line-height:1.6;}
+.manager-footer {display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:8px;font-size:12px;}
+@media(max-width:540px) {.manager-shell{padding:12px;}.manager-row{grid-template-columns:18px 24px 24px minmax(0,1fr);gap:5px;padding:8px 5px;}.manager-status{grid-column:4;}.manager-tools button{font-size:11px;padding:5px 7px;}}
