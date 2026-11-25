@@ -816,6 +816,47 @@ try {
     const saveButtons = await page.locator('.save-file-actions button').all();
     for (const button of saveButtons) { const bounds = await button.boundingBox(); assert(bounds.x >= 0 && bounds.x + bounds.width <= width); }
   }
+
+  // Management actions leave the active broadcast and selected draft untouched.
+  const managerBefore = await get();
+  const managerItems = ['a','b','c','d','e'].map(id => ({id:'manager-'+id,title:id.toUpperCase(),text:'お便り '+id,done:id==='c'}));
+  const managerState = normalizeState({...managerBefore.state,items:managerItems,selectedId:'manager-a',draft:{id:'manager-a',title:'A',text:'お便り a'}});
+  const managerFixture = await fetch(`${origin}/api/state/${connection.sourceId}`,{method:'POST',headers:{...auth,'Content-Type':'application/json'},body:JSON.stringify({expectedRevision:managerBefore.revision,state:managerState})});
+  assert.equal(managerFixture.status,200);
+  await until(async () => await page.locator('#queue-count').textContent() === '5','manager fixture did not sync');
+  await page.locator('#manager-open').click();
+  const manager = page.locator('#manager-dialog');
+  assert(await manager.isVisible());
+  assert.equal(await manager.locator('.manager-row').count(),5);
+  assert.equal(await page.locator('#manager-summary').textContent(),'全 5 件 / 未紹介 4 件');
+  const selectManager = id => manager.locator(`[data-id="manager-${id}"] input`).check();
+  const order = async () => (await get()).state.items.map(item=>item.id.slice(-1)).join('');
+  await selectManager('b'); await selectManager('d');
+  await page.locator('#manager-first').click(); await saved(); assert.equal(await order(),'bdace');
+  await page.locator('#manager-last').click(); await saved(); assert.equal(await order(),'acebd');
+  await page.locator('#manager-position').fill('2'); await page.locator('#manager-move').click(); await saved(); assert.equal(await order(),'abdce');
+  await page.locator('#manager-up').click(); await saved(); assert.equal(await order(),'bdace');
+  await page.locator('#manager-down').click(); await saved(); assert.equal(await order(),'abdce');
+  await page.locator('#manager-undo').click(); await saved(); assert.equal(await order(),'bdace');
+  await page.locator('#manager-all').click(); assert(await page.locator('#manager-first').isDisabled());
+  await page.locator('#manager-clear').click(); assert(await page.locator('#manager-first').isDisabled());
+  await selectManager('b'); await selectManager('d');
+  await manager.locator('[data-id="manager-b"] .manager-handle').dragTo(manager.locator('[data-id="manager-e"]'));
+  await saved(); assert.equal(await order(),'acbde');
+  const managerAfter = (await get()).state;
+  assert.deepEqual(managerAfter.live,managerState.live);
+  assert.deepEqual(managerAfter.draft,managerState.draft);
+  assert.equal(managerAfter.items.find(i=>i.id==='manager-c').done,true);
+  await page.screenshot({path:path.join(artifacts,'letter-manager-desktop.png')});
+  await page.setViewportSize({width:390,height:844});
+  const managerBox = await manager.boundingBox();
+  assert(managerBox && managerBox.x >= 0 && managerBox.x + managerBox.width <= 390 && managerBox.y >= 0 && managerBox.y + managerBox.height <= 844);
+  await page.screenshot({path:path.join(artifacts,'letter-manager-narrow.png')});
+  await page.keyboard.press('Escape'); await manager.waitFor({state:'hidden'});
+  assert.deepEqual((await get()).state.live,managerState.live);
+  assert.equal(await page.locator('.queue-item').first().getAttribute('data-id'),'manager-a');
+  pass('manager keeps full texts, supports multi-selection and stable batch moves, drag and undo without changing live output');
+
   assert.deepEqual(browserErrors, []);
   pass('desktop and narrow layouts stay usable without horizontal overflow or browser errors');
   await fs.writeFile(path.join(artifacts, 'results.json'), JSON.stringify({passed, runtime: 'Linux libobs 30.2.3 + actual OBS LuaJIT + Chromium', caveat: 'OBS browser API is a stand-in in the host; the HTML renderer is exercised in real Chromium. macOS and Windows runtimes are not run here.'}, null, 2));
