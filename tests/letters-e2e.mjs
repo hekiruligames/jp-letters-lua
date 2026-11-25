@@ -789,6 +789,30 @@ try {
     await page.setViewportSize({width, height: 844}); await sleep(120);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth); assert.equal(overflow, false, `horizontal overflow at ${width}px`);
     assert(await page.locator('#live-reading-mode').isVisible()); assert(await page.locator('#readingMode').isVisible());
+    if (width >= 540 && width <= 1100) {
+      // Actual Safari report: a sticky queue covered the full-width settings row.
+      await page.evaluate(() => scrollTo(0,0));
+      const prepare = await page.locator('.prepare-panel').boundingBox();
+      const settings = await page.locator('.settings-panel').boundingBox();
+      const queue = await page.locator('.queue-panel').boundingBox();
+      assert(prepare && settings && queue);
+      assert(settings.y >= prepare.y + prepare.height - 1, `settings not below preview at ${width}px`);
+      assert(Math.abs(settings.x - prepare.x) <= 1 && settings.x >= queue.x + queue.width - 1, `settings must reserve the queue column at ${width}px`);
+      await page.evaluate(() => {
+        const settings = document.querySelector('.settings-panel');
+        scrollTo(0, scrollY + settings.getBoundingClientRect().top - 100);
+      });
+      await sleep(120);
+      const scrolled = await page.evaluate(() => {
+        const rect = sel => document.querySelector(sel).getBoundingClientRect();
+        const q = rect('.queue-panel'), s = rect('.settings-panel'), field = rect('#font');
+        return {qRight:q.right,qTop:q.top,qBottom:q.bottom,sLeft:s.left,sTop:s.top,sBottom:s.bottom,fieldLeft:field.left};
+      });
+      assert(scrolled.qBottom > 0 && scrolled.qTop < 844 && scrolled.sBottom > 0 && scrolled.sTop < 844, `queue and settings must both remain on screen at ${width}px`);
+      assert(scrolled.qRight <= scrolled.sLeft + 1 && scrolled.fieldLeft >= scrolled.sLeft, `sticky queue overlaps settings at ${width}px`);
+      if (width === 800) await page.screenshot({path:path.join(artifacts,'tablet-settings-800.png')});
+      await page.evaluate(() => scrollTo(0,0));
+    }
     const saveButtons = await page.locator('.save-file-actions button').all();
     for (const button of saveButtons) { const bounds = await button.boundingBox(); assert(bounds.x >= 0 && bounds.x + bounds.width <= width); }
   }
