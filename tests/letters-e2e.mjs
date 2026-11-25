@@ -899,7 +899,7 @@ try {
   await until(async()=> (await get()).state.items.some(i=>i.text==='管理画面からファイル取り込み'),'manager file import failed');
   const managerDownload=page.waitForEvent('download'); await page.locator('#manager-export').click();
   const downloaded=await managerDownload; assert.match(downloaded.suggestedFilename(),/\.json$/);
-  const restoreChooser=page.waitForEvent('filechooser'); await page.locator('#manager-restore').click(); await restoreChooser;
+  const restoreChooser=page.waitForEvent('filechooser'); await page.locator('#manager-restore').click(); await (await restoreChooser).setFiles([]);
   assert.deepEqual((await get()).state.live,managerState.live);
   await page.locator('#manager-done').click();
   pass('manager supports new/edit, search/filter, batch status, confirmed delete/undo, import and backup without changing live output');
