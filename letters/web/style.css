@@ -348,3 +348,15 @@ button.advance-primary:disabled {background:var(--panel); color:var(--muted); bo
 #manager-dialog .manager-content p {white-space:pre-wrap;margin:5px 0 0;color:var(--ink);font-size:13px;line-height:1.6;}
 .manager-footer {display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap;border-top:1px solid var(--line);padding-top:8px;font-size:12px;}
 @media(max-width:540px) {.manager-shell{padding:12px;}.manager-row{grid-template-columns:18px 24px 24px minmax(0,1fr);gap:5px;padding:8px 5px;}.manager-status{grid-column:4;}.manager-tools button{font-size:11px;padding:5px 7px;}}
+
+#manager-search {flex:1;min-width:140px;width:auto;min-height:34px;}
+#manager-filter {width:100px;min-height:34px;padding:4px 8px;}
+.manager-row-actions {display:flex;gap:6px;flex-wrap:wrap;margin-top:8px;}
+.manager-row-actions button {font-size:11px;padding:4px 8px;}
+#manager-edit-form {display:grid;gap:8px;}
+#manager-edit-form label {font-size:12px;font-weight:600;}
+#manager-edit-form textarea {min-height:140px;height:min(36dvh,300px);}
+#manager-edit-dialog {max-height:calc(100dvh - 24px);overflow:auto;}
+#manager-edit-error {margin:0;color:var(--ink);}
+#manager-dialog .manager-tools {padding:4px 0;}
+@media(max-width:540px) {.manager-shell {gap:5px;}.manager-help {display:none;} .manager-tools {gap:4px;}}
