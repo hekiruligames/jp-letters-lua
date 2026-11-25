@@ -7,7 +7,7 @@ PR #32の試用ではプレビューを隠す、左一覧を隠す、設定を�
 | 段階 | 課題 |
 | --- | --- |
 | 1 | [UI第2試作](streamer-preview-ui-20261125.md)：レイアウト実機確認OK、全機能は未確認 |
-| 2 | [#33](https://github.com/hekiruligames/jp-letters-lua/issues/33) 専用管理画面・複数選択・一括移動（preview.4試作、CI・実機確認待ち） |
+| 2 | [#33](https://github.com/hekiruligames/jp-letters-lua/issues/33) 専用管理画面・複数選択・一括移動（preview.5試作、CI・実機確認待ち） |
 | 3 | [#34](https://github.com/hekiruligames/jp-letters-lua/issues/34) 返答用メモ（管理メモと分離・配信非表示） |
 | 4 | [#35](https://github.com/hekiruligames/jp-letters-lua/issues/35) グループ化・順序・レイアウト |
 | 5 | [#36](https://github.com/hekiruligames/jp-letters-lua/issues/36) お便り別の関連画像・配置・表示 |
