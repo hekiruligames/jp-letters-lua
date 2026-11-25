@@ -504,7 +504,7 @@ try {
   await display.setViewportSize({width: 960, height: 540});
   await display.screenshot({path: path.join(artifacts, 'opaque-card.png'), omitBackground: true});
   const draftBeforeHide = (await get()).state.draft.text;
-  await page.locator('#hide-editor').click(); await saved(); await until(async () => !(await stats()).visible, 'editor hide did not reach OBS');
+  await page.locator('#hide-live').click(); await saved(); await until(async () => !(await stats()).visible, 'dock hide did not reach OBS');
   assert.equal((await get()).state.draft.text, draftBeforeHide);
   pass('right edge sets exactly 100% opacity without range padding; the editor hide button retains the draft');
 
@@ -715,6 +715,62 @@ try {
   await page.unroute('**/api/state/**');
   pass('native OBS save/restore keeps state; render readiness and immediate hide remain correct');
 
+  // A small Safari/Chrome window shares the MacBook display with OBS and its chat.
+  const compactBefore = await get();
+  const compactScenario = normalizeState({...compactBefore.state,
+    items: [{id:'compact-a', title:'最初', text:'最初のお便りです。', done:false},
+      {id:'compact-b', title:'次', text:'次に表示するお便りです。', done:false}],
+    selectedId:'compact-a', draft:{id:'compact-a', title:'最初', text:'最初のお便りです。'},
+    live:{visible:false, id:null, title:'', text:'', page:0, scroll:0, style:null}});
+  const fixture = await fetch(`${origin}/api/state/${connection.sourceId}`, {
+    method:'POST', headers:{...auth, 'Content-Type':'application/json'},
+    body:JSON.stringify({expectedRevision:compactBefore.revision, state:compactScenario})});
+  assert.equal(fixture.status,200);
+  await until(async () => await page.locator('#draft-text').inputValue() === '最初のお便りです。', 'compact fixture not applied');
+  await page.setViewportSize({width:720,height:760});
+  await page.evaluate(() => scrollTo(0,0));
+  await sleep(150);
+  assert(await page.locator('#preview-viewport').isVisible());
+  assert(await page.locator('.queue-panel').isVisible());
+  assert.equal(await page.locator('#queue-progress').textContent(),'未紹介 2 件 / 全 2 件');
+  const previewBounds = await page.locator('#preview-viewport').boundingBox();
+  const queueBounds = await page.locator('.queue-panel').boundingBox();
+  const initialDock = await page.locator('#live-panel').boundingBox();
+  assert(previewBounds && queueBounds && initialDock);
+  assert(queueBounds.x + queueBounds.width <= previewBounds.x);
+  assert(previewBounds.y >= 0 && previewBounds.y + previewBounds.height <= initialDock.y, 'preview must fit above dock at 720x760');
+  await page.screenshot({path: path.join(artifacts, 'streamer-preview-720.png')});
+  const beforeQuickSize = structuredClone((await get()).state.live);
+  await page.locator('#quick-height').fill('620'); await page.locator('#quick-height').press('Tab'); await saved();
+  assert.equal((await get()).state.style.height,620); assert.deepEqual((await get()).state.live,beforeQuickSize);
+  assert.equal(await page.locator('#height').inputValue(),'620');
+  await page.locator('#quick-height').fill('540'); await page.locator('#quick-height').press('Tab'); await saved();
+  const dock = await page.locator('#live-panel').boundingBox(), action = await page.locator('#show-letter').boundingBox();
+  assert(dock && dock.y >= 0 && dock.y + dock.height <= 761);
+  assert(action && action.y >= dock.y && action.y + action.height <= dock.y + dock.height);
+  assert(await page.locator('#finish-next-live').isDisabled());
+  await page.locator('#show-letter').click(); await saved();
+  await until(async () => (await get()).state.live.id === 'compact-a', 'first compact letter not aired');
+  await until(async () => await page.locator('#finish-next-live').isEnabled(), 'advance action did not enable');
+  assert.equal(await page.locator('#next-label').textContent(),'次：次');
+  const enabledColor = await page.locator('#finish-next-live').evaluate(el => getComputedStyle(el).backgroundColor);
+  assert.equal(enabledColor,'rgb(24, 121, 78)');
+  await page.evaluate(() => scrollTo(0,document.documentElement.scrollHeight));
+  const scrolledAction = await page.locator('#finish-next-live').boundingBox();
+  assert(scrolledAction && scrolledAction.y >= 0 && scrolledAction.y + scrolledAction.height <= 760);
+  await page.locator('#finish-next-live').click(); await saved();
+  await until(async () => (await get()).state.live.id === 'compact-b' && (await get()).state.live.visible, 'next letter not aired');
+  assert.equal((await get()).state.items[0].done,true);
+  await until(async () => (await display.locator('.letter-text').textContent()) === '次に表示するお便りです。', 'new letter not painted');
+  await page.locator('#finish-live').click(); await saved();
+  assert.equal((await get()).state.items[1].done,true);
+  assert.equal((await get()).state.live.visible,false);
+  assert(await page.locator('#finish-next-live').isDisabled());
+  pass('preview and queue remain visible side by side; quick height and fixed actions work; enabled next is distinct and advances safely');
+
+
+
+
   await page.setViewportSize({width: 390, height: 844});
   await page.evaluate(() => scrollTo(0, 0));
   await page.screenshot({path: path.join(artifacts, 'preparation-save-load-narrow.png')});
@@ -728,7 +784,7 @@ try {
   await page.screenshot({path: path.join(artifacts, 'bulk-delete-narrow.png')});
   await page.keyboard.press('Escape'); await page.locator('#delete-dialog').waitFor({state: 'hidden'});
   assert.equal((await get()).state.live.visible, true);
-  for (const width of [390, 680, 800, 1100, 1200, 1440]) {
+  for (const width of [390, 540, 680, 720, 800, 1100, 1200, 1440]) {
     await page.setViewportSize({width, height: 844}); await sleep(120);
     const overflow = await page.evaluate(() => document.documentElement.scrollWidth > innerWidth); assert.equal(overflow, false, `horizontal overflow at ${width}px`);
     assert(await page.locator('#live-reading-mode').isVisible()); assert(await page.locator('#readingMode').isVisible());
