@@ -314,3 +314,12 @@ button.advance-primary:disabled {background:var(--panel); color:var(--muted); bo
   .queue-panel {position:static;}
   .quick-frame input[type=number] {width:68px;}
 }
+
+/* Tablet: reserve the first column for the sticky queue across both rows.
+   A full-width settings row would otherwise intersect the sticky queue on scroll. */
+@media (min-width:540px) and (max-width:1100px) {
+  .workspace {grid-template-areas:"queue prepare" "queue settings"; grid-template-rows:auto auto;}
+  .queue-panel {grid-area:queue; min-width:0;}
+  .prepare-panel {grid-area:prepare; min-width:0;}
+  .settings-panel {grid-area:settings; min-width:0;}
+}
