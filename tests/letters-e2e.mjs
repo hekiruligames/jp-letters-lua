@@ -841,7 +841,9 @@ try {
   await page.locator('#manager-all').click(); assert(await page.locator('#manager-first').isDisabled());
   await page.locator('#manager-clear').click(); assert(await page.locator('#manager-first').isDisabled());
   await selectManager('b'); await selectManager('d');
-  await manager.locator('[data-id="manager-b"] .manager-handle').dragTo(manager.locator('[data-id="manager-e"]'));
+  const dragSource = manager.locator('[data-id="manager-b"] .manager-handle'), dragTarget = manager.locator('[data-id="manager-e"]');
+  await dragTarget.scrollIntoViewIfNeeded();
+  await dragSource.hover(); await page.mouse.down(); await dragTarget.hover({position:{x:50,y:15}}); await dragTarget.hover({position:{x:51,y:16}}); await page.mouse.up();
   await saved(); assert.equal(await order(),'acbde');
   const managerAfter = (await get()).state;
   assert.deepEqual(managerAfter.live,managerState.live);
@@ -903,6 +905,40 @@ try {
   assert.deepEqual((await get()).state.live,managerState.live);
   await page.locator('#manager-done').click();
   pass('manager supports new/edit, search/filter, batch status, confirmed delete/undo, import and backup without changing live output');
+  // Reply notes are preparation-only data and must never be part of the live snapshot.
+  const note = '非公開の返答メモ・テスト';
+  await page.locator('#reply-note').fill(note); await saved();
+  const noted = (await get()).state, notedId=noted.draft.id;
+  assert(notedId); assert.equal(noted.draft.replyNote,note);
+  assert.equal(noted.items.find(i=>i.id===notedId).replyNote,note);
+  assert.deepEqual(noted.live,managerState.live);
+  await page.locator('#show-letter').click(); await saved();
+  assert.equal((await get()).state.live.replyNote,undefined);
+  await until(async()=> (await get()).renderedLiveRevision === (await get()).liveRevision,'note output not ready');
+  assert(!(await display.locator('body').innerText()).includes(note));
+  assert(!(await page.locator('#preview-host').innerText()).includes(note));
+  await page.locator('#manager-open').click();
+  await page.locator('#manager-search').fill(note);
+  assert.equal(await manager.locator('.manager-row').count(),1);
+  await manager.locator('.manager-row').getByRole('button',{name:'編集',exact:true}).click();
+  assert.equal(await page.locator('#manager-edit-reply').inputValue(),note);
+  await page.locator('#manager-edit-reply').fill(note+' 追記');
+  await page.locator('#manager-edit-form button[type=submit]').click(); await saved();
+  await page.locator('#manager-done').click();
+  assert.equal(await page.locator('#reply-note').inputValue(),note+' 追記');
+  await page.locator('.queue-select').first().click(); await saved();
+  await page.locator('.queue-item[data-id="'+notedId+'"] .queue-select').click(); await saved();
+  assert.equal(await page.locator('#reply-note').inputValue(),note+' 追記');
+  await page.reload(); await page.locator('#app').waitFor({state:'visible'});
+  assert.equal(await page.locator('#reply-note').inputValue(),note+' 追記');
+  const noteDownload=page.waitForEvent('download'); await page.locator('#export').click();
+  const noteFile=await noteDownload;
+  const noteBackup=JSON.parse(await fs.readFile(await noteFile.path(),'utf8'));
+  assert.equal(noteBackup.items.find(i=>i.id===notedId).replyNote,note+' 追記');
+  await page.locator('#reply-note').fill(''); await saved();
+  assert.equal((await get()).state.items.find(i=>i.id===notedId).replyNote,undefined);
+  await page.screenshot({path:path.join(artifacts,'reply-note.png')});
+  pass('reply notes survive switching, reload, and backup; management editing and clearing work; preview and live rendering exclude them');
 
 
   assert.deepEqual(browserErrors, []);
