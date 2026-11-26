@@ -1,5 +1,5 @@
 // SPDX-License-Identifier: GPL-2.0-or-later
-import {normalizeState, renderLetter, setScroll, deadlineSignal} from './core.js';
+import {normalizeState, renderPresentation, setScroll, deadlineSignal} from './core.js';
 const host = document.getElementById('display-host'), params = new URLSearchParams(location.search);
 const token = params.get('token') || '', source = params.get('source') || '';
 let renderedKey = '', reportedRevision = -1;
@@ -15,7 +15,7 @@ async function poll() {
     if (key !== renderedKey) {
       host.style.visibility = 'hidden';
       if (live.visible) {
-        const result = await renderLetter(host, live, live.style || state.style, live.page, {prepared: true});
+        const result = await renderPresentation(host, live, live.style || state.style, live.page, {prepared: true});
         count = result.pages.length;
         host.dataset.scrollMax = String(result.scrollMax); host.dataset.viewportHeight = String(result.viewportHeight);
       } else { host.replaceChildren(); count = 1; }
