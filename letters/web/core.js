@@ -479,13 +479,30 @@ export async function renderLetter(host, value, rawStyle, page = 0, options = {}
   return {pages, page: index, frame, style, scrollMax, viewportHeight: g.height};
 }
 
+// Button movement is separate from the continuous range slider.
+export function stepScroll(position,delta,metrics,layout,loop=false) {
+  const maximum=Number(metrics.scrollMax)||0, extent=Number(metrics.viewportHeight)||0;
+  if(maximum<=0||extent<=0)return 0;
+  const pos=bounded(position,0,0,1), epsilon=1e-6;
+  if(loop&&isGroupScroll(layout)){
+    if(delta>0&&pos>=1-epsilon)return 0;
+    if(delta<0&&pos<=epsilon)return 1;
+  }
+  if(layout==='horizontal-scroll'){
+    // Each horizontal card/page fills the source width, with a 12px gap.
+    const stride=extent+12, at=pos*maximum/stride;
+    const target=delta>0?Math.floor(at+epsilon)+1:Math.ceil(at-epsilon)-1;
+    return bounded(target*stride/maximum,0,0,1);
+  }
+  return bounded(pos+delta*(isGroupScroll(layout)?.9:.85)*extent/maximum,0,0,1);
+}
 export function setScroll(frame, position, smooth = true) {
   if(!frame)return;
   const maximum = Number(frame.dataset.scrollMax) || 0;
   const fraction = bounded(position, 0, 0, 1);
   const track=frame.querySelector('.letter-group-track');
   if(track){
-    track.style.transition=smooth && !matchMedia('(prefers-reduced-motion: reduce)').matches ? 'transform 180ms ease-out' : 'none';
+    track.style.transition=smooth && !matchMedia('(prefers-reduced-motion: reduce)').matches ? 'transform 280ms cubic-bezier(.22,.61,.36,1)' : 'none';
     track.style.transform='translate'+(frame.dataset.scrollAxis==='x'?'X':'Y')+'('+(-maximum*fraction)+'px)';
     return;
   }
