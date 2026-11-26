@@ -225,7 +225,7 @@ async function updatePreview() {
     previewError = '';
     previewMetrics = result; previewStyle = result.style; scalePreview();
     $('preview-size').textContent = `${result.style.width} × ${result.style.height}${style.autoHeight ? '（自動）' : ''}`;
-    const scrolling = style.readingMode === 'scroll'; $('preview-scroll').hidden = !scrolling;
+    const scrolling = result.style.readingMode === 'scroll'; $('preview-scroll').hidden = !scrolling;
     $('preview-prev').textContent = scrolling ? '↑ 上へ' : '← 前'; $('preview-next').textContent = scrolling ? '下へ ↓' : '次 →';
     $('preview-prev').setAttribute('aria-label', scrolling ? '準備中の文章を上へ' : '準備中の前のページ');
     $('preview-next').setAttribute('aria-label', scrolling ? '準備中の文章を下へ' : '準備中の次のページ');
@@ -694,7 +694,7 @@ function renderGroups(){
     for(const [v,t] of [['grid','2列グリッド'],['vertical','縦並び'],['horizontal','横並び']]){const o=document.createElement('option');o.value=v;o.textContent=t;layout.append(o);}
     layout.value=current.layout;layout.addEventListener('change',()=>{previewPage=0;mutate(s=>{s.groups.find(g=>g.id===current.id).layout=layout.value;},true);});
     const single=document.createElement('button');single.textContent='個別表示に戻す';single.addEventListener('click',()=>{previewPage=0;mutate(s=>{delete s.draft.groupId;});});
-    const info=document.createElement('span');info.textContent='ページ送り・固定高さ';
+    const info=document.createElement('span');info.textContent='ページ送り・固定高さ／本文・返答メモは先頭のお便り';
     p.append(label,layout,single,info);
   }
   const m=$('manager-groups');m.hidden=!groups.length;
