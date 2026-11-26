@@ -35,7 +35,7 @@
         <div class="panel-heading"><h2>お便り <span id="queue-count" class="count">0</span></h2><button id="new-letter" class="small primary-soft">＋ 新規</button></div>
         <p id="queue-progress" class="queue-progress"></p><div class="manager-entry"><button id="manager-open" class="primary-soft" aria-haspopup="dialog">お便り管理</button></div><input id="search" class="search" type="search" placeholder="本文・メモから探す" aria-label="お便りを検索">
         <div class="filters" role="group" aria-label="一覧の絞り込み"><button data-filter="all" aria-pressed="true">すべて</button><button data-filter="unread" aria-pressed="false">未紹介</button><button data-filter="done" aria-pressed="false">紹介済み</button></div>
-        <ol id="queue-list" class="queue-list"></ol><p id="queue-empty" class="queue-empty">マシュマロの本文を貼り付けて、最初のお便りを準備しましょう。</p>
+        <div id="queue-groups" class="queue-groups" hidden></div><ol id="queue-list" class="queue-list"></ol><p id="queue-empty" class="queue-empty">マシュマロの本文を貼り付けて、最初のお便りを準備しましょう。</p>
         <div class="queue-tools"><button id="move-up" class="small" aria-label="選択中のお便りを上へ">↑ 上へ</button><button id="move-down" class="small" aria-label="選択中のお便りを下へ">↓ 下へ</button><button id="toggle-done" class="small">紹介済み</button></div>
         <div class="queue-delete-actions"><button id="delete-letter" class="small danger-soft">選択中の1件を削除</button><button id="delete-bulk-open" class="small" aria-haspopup="dialog">まとめて削除</button></div>
         <div class="queue-footer"><button id="undo" class="text-button" disabled>一覧の操作を戻す</button></div>
@@ -47,7 +47,7 @@
       <section class="prepare-panel panel" aria-label="表示前の準備">
         <div class="panel-heading"><h2><span class="prepare-dot"></span> 表示前のプレビュー</h2><span class="prepare-label">配信は変わりません</span><span id="preview-size" class="subtle">960 × 540</span></div>
         <div class="preview-mode-row"><label for="readingMode">次に表示するお便りの読み方</label><select id="readingMode" aria-describedby="preview-mode-help"><option value="pages">ページ送り</option><option value="scroll">スクロール</option></select><p id="preview-mode-help">「配信に表示」を押すと、1ページ目・先頭から表示します。</p></div>
-        <div class="quick-frame" role="group" aria-label="枠のサイズ（簡易調整）"><label for="quick-width">幅 <input id="quick-width" type="number" min="320" max="3840" aria-label="枠の幅（簡易調整）"></label><label for="quick-height"><span id="quick-height-label">高さ</span> <input id="quick-height" type="number" min="180" max="2160" aria-label="枠の高さ（簡易調整）"></label><button id="quick-auto-height" class="small" aria-pressed="false">自動高さ</button></div><div id="preview-viewport" class="preview-viewport"><div id="preview-host"></div><div id="preview-empty"><span aria-hidden="true">✉</span><p>本文を入れると、ここで見た目を確認できます。</p></div></div>
+        <div class="quick-frame" role="group" aria-label="枠のサイズ（簡易調整）"><label for="quick-width">幅 <input id="quick-width" type="number" min="320" max="3840" aria-label="枠の幅（簡易調整）"></label><label for="quick-height"><span id="quick-height-label">高さ</span> <input id="quick-height" type="number" min="180" max="2160" aria-label="枠の高さ（簡易調整）"></label><button id="quick-auto-height" class="small" aria-pressed="false">自動高さ</button></div><div id="group-preparation" class="group-preparation" hidden></div><div id="preview-viewport" class="preview-viewport"><div id="preview-host"></div><div id="preview-empty"><span aria-hidden="true">✉</span><p>本文を入れると、ここで見た目を確認できます。</p></div></div>
         <div class="preview-bottom"><span id="preview-info" class="subtle">長文は読みやすい文字サイズのままページに分けます。</span><div class="preview-navigation"><span class="preview-navigation-label">プレビューだけを操作</span><input id="preview-scroll" class="position-slider" type="range" min="0" max="1000" step="1" value="0" aria-label="準備中のスクロール位置" hidden><div class="page-navigation"><button id="preview-prev" aria-label="準備中の前のページ">← 前</button><span id="preview-page">—</span><button id="preview-next" aria-label="準備中の次のページ">次 →</button></div></div></div>
         <div class="reply-note"><label for="reply-note">返答用メモ <span class="optional">配信には表示しません</span></label><textarea id="reply-note" maxlength="4000" rows="3" placeholder="話したいこと・返事の下書きなど"></textarea></div>
         <div class="editor"><label for="draft-title">管理用のメモ <span class="optional">任意</span></label><input id="draft-title" maxlength="100" placeholder="例：ゲームの質問、最近の出来事">
@@ -107,12 +107,20 @@
         <button id="manager-first" data-manager-move="first">先頭へ</button><button id="manager-last" data-manager-move="last">末尾へ</button>
         <label for="manager-position">移動後の先頭位置 <input id="manager-position" type="number" min="1" value="1"></label><button id="manager-move" data-manager-move="position">移動</button>
         <button id="manager-undo">元に戻す</button>
-        <button id="manager-mark-done">紹介済みにする</button><button id="manager-mark-pending">未紹介に戻す</button><button id="manager-delete" class="danger-soft">選択した項目を削除</button><button id="manager-delete-bulk" class="danger-soft">まとめて削除</button>
+        <button id="manager-group-create" class="primary-soft">グループ化</button><button id="manager-mark-done">紹介済みにする</button><button id="manager-mark-pending">未紹介に戻す</button><button id="manager-delete" class="danger-soft">選択した項目を削除</button><button id="manager-delete-bulk" class="danger-soft">まとめて削除</button>
       </div>
       <p class="manager-help">チェックしたお便りをまとめて移動できます。ハンドルを別のお便りの上へドラッグすると、その直前に移動します。選択内の順序は維持されます。変更はOBSに自動保存され、配信中の表示は変わりません。</p>
-      <div class="manager-scroll"><ol id="manager-list" class="manager-list"></ol><p id="manager-empty" hidden>お便りはありません。</p></div>
+      <div class="manager-scroll"><div id="manager-groups" class="manager-groups" hidden></div><ol id="manager-list" class="manager-list"></ol><p id="manager-empty" hidden>お便りはありません。</p></div>
       <div class="manager-footer"><span id="manager-message" role="status"></span><button id="manager-done" class="primary">配信操作に戻る</button></div>
     </div>
+  </dialog>
+  <dialog id="group-dialog" aria-labelledby="group-heading">
+    <form id="group-form"><div class="dialog-heading"><h2 id="group-heading">お便りグループ</h2><button type="button" id="group-close" aria-label="閉じる">×</button></div>
+    <label for="group-title">グループ名（管理用）</label><input id="group-title" maxlength="100" placeholder="例：似た質問">
+    <label for="group-layout">カードの配置</label><select id="group-layout"><option value="grid">2列グリッド</option><option value="vertical">縦に並べる</option><option value="horizontal">横に並べる</option></select>
+    <div id="group-layout-preview" class="group-layout-preview" aria-label="配置イメージ"></div>
+    <p>表示する順番を変更できます。元のお便りはそのまま残ります。</p><ol id="group-members" class="group-members"></ol>
+    <p id="group-error" role="status"></p><div class="dialog-actions"><button type="button" id="group-cancel">キャンセル</button><button type="submit" class="primary">グループを保存</button></div></form>
   </dialog>
   <dialog id="manager-edit-dialog" aria-labelledby="manager-edit-heading">
     <form id="manager-edit-form"><div class="dialog-heading"><h2 id="manager-edit-heading">お便りを編集</h2><button type="button" id="manager-edit-close" aria-label="編集を閉じる">×</button></div>
