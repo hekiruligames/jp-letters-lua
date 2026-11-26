@@ -408,3 +408,6 @@ button.advance-primary:disabled {background:var(--panel); color:var(--muted); bo
 #group-layout-preview[data-layout="vertical-scroll"] {max-height:130px;overflow-y:auto;scrollbar-width:thin;}
 #group-layout-preview[data-layout="horizontal-scroll"] {grid-auto-flow:column;grid-template-columns:none!important;grid-auto-columns:70px;overflow-x:auto;scrollbar-width:thin;min-height:46px;}
 .letter-group-track > .letter-frame {flex:0 0 auto;}
+
+.group-loop-row {display:flex;align-items:center;gap:5px;font-size:12px;line-height:1.4;}
+.group-loop-row input {width:auto;min-height:0;flex:none;}
