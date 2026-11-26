@@ -3,7 +3,9 @@
 import {normalizeUI} from './themes.js';
 export const MAX_ICON_DATA_URL = 180000;
 export const MAX_GROUP_MEMBERS = 16;
-export const groupColumns = (layout,count) => layout==='horizontal'?count:layout==='vertical'?1:Math.ceil(Math.sqrt(count));
+export const isGroupScroll = layout => layout==='vertical-scroll'||layout==='horizontal-scroll';
+export const groupColumns = (layout,count) => layout==='horizontal'||layout==='horizontal-scroll'?count:layout==='vertical'||layout==='vertical-scroll'?1:Math.ceil(Math.sqrt(count));
+const groupLayouts = ['vertical','horizontal','grid','vertical-scroll','horizontal-scroll'];
 export const DEFAULT_STYLE = Object.freeze({
   width: 960, height: 540, font: 'Yu Gothic', fontSize: 32, lineHeight: 1.5,
   padding: { top: 16, right: 16, bottom: 16, left: 16 }, innerPadding: 24,
@@ -86,7 +88,7 @@ export function normalizeState(input = {}) {
     }
     groupNumbers.add(number);
     const replyNote=text(raw.replyNote).slice(0,4000);
-    groups.push({id:raw.id,number,title:text(raw.title).slice(0,100),members:members.map(id=>({id})),layout:['vertical','horizontal','grid'].includes(raw.layout) ? raw.layout : 'grid',...(replyNote?{replyNote}:{})});
+    groups.push({id:raw.id,number,title:text(raw.title).slice(0,100),members:members.map(id=>({id})),layout:groupLayouts.includes(raw.layout) ? raw.layout : 'grid',...(replyNote?{replyNote}:{})});
   }
   const style = normalizeStyle(input.style), rawDraft = input.draft || {}, rawLive = input.live || {};
   if (text(rawDraft.text).length > 12000 || text(rawLive.text).length > 12000) {
@@ -106,8 +108,8 @@ export function normalizeState(input = {}) {
     result.live.groupId=rawLive.groupId; result.live.groupCards=cards;
     result.live.groupTitle=text(rawLive.groupTitle).slice(0,100);
     if(Number.isInteger(rawLive.groupNumber)&&rawLive.groupNumber>0)result.live.groupNumber=rawLive.groupNumber;
-    result.live.groupLayout=['vertical','horizontal','grid'].includes(rawLive.groupLayout)?rawLive.groupLayout:'grid';
-    if (result.live.style) {result.live.style.readingMode='pages';result.live.style.autoHeight=false;}
+    result.live.groupLayout=groupLayouts.includes(rawLive.groupLayout)?rawLive.groupLayout:'grid';
+    if (result.live.style) {result.live.style.readingMode=isGroupScroll(result.live.groupLayout)?'scroll':'pages';result.live.style.autoHeight=false;}
   }
   if (new TextEncoder().encode(JSON.stringify(result)).length > 800000) {
     throw new Error('一覧のデータが大きくなっています。バックアップを書き出し、お便りを配信ごとに分けてください。');
@@ -478,8 +480,17 @@ export async function renderLetter(host, value, rawStyle, page = 0, options = {}
 }
 
 export function setScroll(frame, position, smooth = true) {
-  const body = frame.querySelector('.letter-text'), maximum = Number(frame.dataset.scrollMax) || 0;
+  if(!frame)return;
+  const maximum = Number(frame.dataset.scrollMax) || 0;
   const fraction = bounded(position, 0, 0, 1);
+  const track=frame.querySelector('.letter-group-track');
+  if(track){
+    track.style.transition=smooth && !matchMedia('(prefers-reduced-motion: reduce)').matches ? 'transform 180ms ease-out' : 'none';
+    track.style.transform='translate'+(frame.dataset.scrollAxis==='x'?'X':'Y')+'('+(-maximum*fraction)+'px)';
+    return;
+  }
+  const body = frame.querySelector('.letter-text');
+  if(!body)return;
   body.style.transition = smooth && !matchMedia('(prefers-reduced-motion: reduce)').matches ? 'transform 180ms ease-out' : 'none';
   body.style.transform = `translateY(${-maximum * fraction}px)`;
   const footer = frame.querySelector('.letter-footer');
@@ -491,6 +502,7 @@ export async function renderPresentation(host, value, rawStyle, page=0, options=
   const cards=value.groupCards;
   if (!cards || cards.length<2) return renderLetter(host,value,rawStyle,page,options);
   if(cards.some(card=>!card.text.trim()))throw new Error('グループ内の本文が空です。');
+  if(isGroupScroll(value.groupLayout))return renderGroupStrip(host,value,rawStyle,options);
   const style=normalizeStyle({...rawStyle,autoHeight:false,readingMode:'pages'});
   const layout=value.groupLayout, columns=groupColumns(layout,cards.length);
   const rows=Math.ceil(cards.length/columns), gap=Math.min(12,Math.max(2,Math.floor(Math.min(style.width/columns,style.height/rows)*.04)));
@@ -515,4 +527,40 @@ export async function renderPresentation(host, value, rawStyle, page=0, options=
   }
   host.replaceChildren(frame);
   return {frame,style,pages:Array(count).fill(''),page:Math.max(0,Math.min(count-1,page)),scrollMax:0,viewportHeight:height};
+}
+
+ 
+// A strip keeps the normal card width/font and uses the OBS source as a viewport.
+// Long letters retain every page in sequence instead of overflowing or truncating.
+async function renderGroupStrip(host,value,rawStyle,options={}) {
+  const style=normalizeStyle({...rawStyle,autoHeight:false,readingMode:'scroll'});
+  const horizontal=value.groupLayout==='horizontal-scroll', gap=12;
+  const frame=document.createElement('div');frame.className='letter-frame letter-group-frame letter-group-strip';
+  Object.assign(frame.style,{width:style.width+'px',height:style.height+'px',overflow:'hidden',background:rgba(style.frameBackground,style.frameBackgroundOpacity)});
+  const track=document.createElement('div');track.className='letter-group-track';
+  Object.assign(track.style,{position:'absolute',left:'0',top:'0',display:'flex',flexDirection:horizontal?'row':'column',alignItems:'flex-start',gap:gap+'px',transformOrigin:'top left'});
+  let length=0, pages=0;
+  for(const card of value.groupCards){
+    if(options.signal?.aborted)throw new DOMException('preview superseded','AbortError');
+    // On a vertical strip, short letters use their natural height, up to the viewport.
+    const childStyle=await prepareStyle(card.text,{...style,readingMode:'pages',autoHeight:!horizontal,frameBackgroundOpacity:0});
+    childStyle.autoHeight=false;
+    const scratch=document.createElement('div');
+    let result=await renderLetter(scratch,card,childStyle,0,{...options,prepared:true});
+    const count=result.pages.length;
+    for(let i=0;i<count;i++){
+      if(options.signal?.aborted)throw new DOMException('preview superseded','AbortError');
+      if(i>0)result=await renderLetter(scratch,card,childStyle,i,{...options,prepared:true});
+      result.frame.dataset.groupMember=card.id;
+      result.frame.dataset.groupMemberPage=String(i+1);
+      if(horizontal)result.frame.style.marginTop=Math.max(0,(style.height-childStyle.height)/2)+'px';
+      track.append(result.frame);length+=(horizontal?childStyle.width:childStyle.height)+gap;pages++;
+    }
+  }
+  length=Math.max(0,length-gap);
+  const extent=horizontal?style.width:style.height, scrollMax=Math.max(0,length-extent);
+  frame.dataset.scrollMax=String(scrollMax);frame.dataset.scrollAxis=horizontal?'x':'y';
+  frame.append(track);host.replaceChildren(frame);
+  setScroll(frame,value.scroll||0,false);
+  return {frame,style,pages:[''],page:0,scrollMax,viewportHeight:extent,stripPages:pages};
 }
