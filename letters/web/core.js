@@ -2,6 +2,8 @@
 // Shared state operations and layout for both the operator preview and OBS.
 import {normalizeUI} from './themes.js';
 export const MAX_ICON_DATA_URL = 180000;
+export const MAX_GROUP_MEMBERS = 16;
+export const groupColumns = (layout,count) => layout==='horizontal'?count:layout==='vertical'?1:Math.ceil(Math.sqrt(count));
 export const DEFAULT_STYLE = Object.freeze({
   width: 960, height: 540, font: 'Yu Gothic', fontSize: 32, lineHeight: 1.5,
   padding: { top: 16, right: 16, bottom: 16, left: 16 }, innerPadding: 24,
@@ -70,13 +72,21 @@ export function normalizeState(input = {}) {
     items.push({ id, title: text(item.title).slice(0, 100), text: content, done: !!item.done, ...(replyNote ? {replyNote} : {}) });
   }
   if (items.length > 300) throw new Error('お便りは300件まで登録できます。');
-  const groups = [], grouped = new Set(), groupIds = new Set();
-  for (const raw of Array.isArray(input.groups) ? input.groups : []) {
+  const groups = [], grouped = new Set(), groupIds = new Set(), groupNumbers = new Set();
+  const rawGroups = Array.isArray(input.groups) ? input.groups : [];
+  const reservedNumbers = new Set(rawGroups.map(g=>g?.number).filter(n=>Number.isInteger(n)&&n>0&&n<=999999));
+  for (const raw of rawGroups) {
     if (!raw || typeof raw.id !== 'string' || !/^[A-Za-z0-9_-]{1,120}$/.test(raw.id) || groupIds.has(raw.id)) continue;
-    const members = [...new Set(Array.isArray(raw.members) ? raw.members.map(m=>m?.id) : [])].filter(id => ids.has(id) && !grouped.has(id)).slice(0,4);
+    const members = [...new Set(Array.isArray(raw.members) ? raw.members.map(m=>m?.id) : [])].filter(id => ids.has(id) && !grouped.has(id)).slice(0,MAX_GROUP_MEMBERS);
     if (members.length < 2) continue;
     groupIds.add(raw.id); members.forEach(id => grouped.add(id));
-    groups.push({id:raw.id,title:text(raw.title).slice(0,100),members:members.map(id=>({id})),layout:['vertical','horizontal','grid'].includes(raw.layout) ? raw.layout : 'grid'});
+    let number=raw.number;
+    if(!Number.isInteger(number)||number<1||number>999999||groupNumbers.has(number)){
+      number=1;while(groupNumbers.has(number)||reservedNumbers.has(number))number++;
+    }
+    groupNumbers.add(number);
+    const replyNote=text(raw.replyNote).slice(0,4000);
+    groups.push({id:raw.id,number,title:text(raw.title).slice(0,100),members:members.map(id=>({id})),layout:['vertical','horizontal','grid'].includes(raw.layout) ? raw.layout : 'grid',...(replyNote?{replyNote}:{})});
   }
   const style = normalizeStyle(input.style), rawDraft = input.draft || {}, rawLive = input.live || {};
   if (text(rawDraft.text).length > 12000 || text(rawLive.text).length > 12000) {
@@ -91,10 +101,11 @@ export function normalizeState(input = {}) {
   if (groups.length) result.groups = groups;
   const group = groups.find(g=>g.id===rawDraft.groupId && g.members.some(m=>m.id===result.draft.id));
   if (group) result.draft.groupId = group.id;
-  const cards = Array.isArray(rawLive.groupCards) ? rawLive.groupCards.slice(0,4).filter(c=>c && typeof c.id==='string' && text(c.text).trim() && text(c.text).length<=12000).map(c=>({id:c.id,title:text(c.title).slice(0,100),text:text(c.text)})) : [];
+  const cards = Array.isArray(rawLive.groupCards) ? rawLive.groupCards.slice(0,MAX_GROUP_MEMBERS).filter(c=>c && typeof c.id==='string' && text(c.text).trim() && text(c.text).length<=12000).map(c=>({id:c.id,title:text(c.title).slice(0,100),text:text(c.text)})) : [];
   if (cards.length>=2 && typeof rawLive.groupId==='string') {
     result.live.groupId=rawLive.groupId; result.live.groupCards=cards;
     result.live.groupTitle=text(rawLive.groupTitle).slice(0,100);
+    if(Number.isInteger(rawLive.groupNumber)&&rawLive.groupNumber>0)result.live.groupNumber=rawLive.groupNumber;
     result.live.groupLayout=['vertical','horizontal','grid'].includes(rawLive.groupLayout)?rawLive.groupLayout:'grid';
     if (result.live.style) {result.live.style.readingMode='pages';result.live.style.autoHeight=false;}
   }
@@ -142,7 +153,7 @@ export function preparedValue(state) {
   const groupCards=group.members.map(m=>state.items.find(i=>i.id===m.id)).filter(Boolean)
     .map(i=>({id:i.id,title:i.id===state.draft.id?state.draft.title:i.title,text:i.id===state.draft.id?state.draft.text:i.text}));
   if(groupCards.length<2)return state.draft;
-  return {...state.draft,groupId:group.id,groupTitle:group.title,groupLayout:group.layout,groupCards};
+  return {...state.draft,groupId:group.id,groupNumber:group.number,groupTitle:group.title,groupLayout:group.layout,groupCards};
 }
 export const presentationId = value => value.groupId ? 'group:'+value.groupId : value.id;
 export function showDraft(state, liveStyle = state.style) {
@@ -151,7 +162,7 @@ export function showDraft(state, liveStyle = state.style) {
   state.live = {visible: true, id: state.draft.id, text: state.draft.text, title: state.draft.title,
     page: 0, scroll: 0, style: clone(liveStyle)};
   const prepared = preparedValue(state);
-  if (prepared.groupCards) Object.assign(state.live,{groupId:prepared.groupId,groupTitle:prepared.groupTitle,groupLayout:prepared.groupLayout,groupCards:clone(prepared.groupCards)});
+  if (prepared.groupCards) Object.assign(state.live,{groupId:prepared.groupId,groupNumber:prepared.groupNumber,groupTitle:prepared.groupTitle,groupLayout:prepared.groupLayout,groupCards:clone(prepared.groupCards)});
   return state;
 }
 export function finishLive(state) {
@@ -210,7 +221,7 @@ export function removeItems(state, ids) {
   // The aired text is an independent snapshot; deleting a queue item doesn't replace it.
   return state;
 }
-export const label = item => (item.groupId && item.groupCards ? (item.groupTitle || 'まとめたお便り') + '（'+item.groupCards.length+'件）' : '') || item.title || item.text.replace(/\s+/g, ' ').slice(0, 28) || '新しいお便り';
+export const label = item => (item.groupId && item.groupCards ? (item.groupNumber ? '組'+item.groupNumber+' ' : '') + (item.groupTitle || 'まとめたお便り') + '（'+item.groupCards.length+'件）' : '') || item.title || item.text.replace(/\s+/g, ' ').slice(0, 28) || '新しいお便り';
 
 export function applyDisplayPreset(style, name) {
   if (name === 'clear') {
@@ -481,19 +492,25 @@ export async function renderPresentation(host, value, rawStyle, page=0, options=
   if (!cards || cards.length<2) return renderLetter(host,value,rawStyle,page,options);
   if(cards.some(card=>!card.text.trim()))throw new Error('グループ内の本文が空です。');
   const style=normalizeStyle({...rawStyle,autoHeight:false,readingMode:'pages'});
-  const layout=value.groupLayout, columns=layout==='horizontal'?cards.length:layout==='vertical'?1:2;
-  const rows=Math.ceil(cards.length/columns), gap=12;
+  const layout=value.groupLayout, columns=groupColumns(layout,cards.length);
+  const rows=Math.ceil(cards.length/columns), gap=Math.min(12,Math.max(2,Math.floor(Math.min(style.width/columns,style.height/rows)*.04)));
   const width=Math.floor((style.width-gap*(columns-1))/columns),height=Math.floor((style.height-gap*(rows-1))/rows);
-  if(width<320 || height<180)throw new Error('カードの領域が足りません。枠の幅・高さを広げるか、配置を変更してください。');
-  const childStyle=normalizeStyle({...style,width,height,frameBackgroundOpacity:0,showIcon:false,
+  // Render at a safe logical size, then uniformly fit the card into its cell.
+  // This allows crowd/overview shots without clipping the text or changing the source size.
+  const logicalScale=Math.max(1,320/width,180/height);
+  const logicalWidth=Math.min(3840,Math.ceil(width*logicalScale)), logicalHeight=Math.min(2160,Math.ceil(height*logicalScale));
+  const fit=Math.min(width/logicalWidth,height/logicalHeight,1);
+  const childStyle=normalizeStyle({...style,width:logicalWidth,height:logicalHeight,frameBackgroundOpacity:0,showIcon:false,
     padding:{top:8,right:8,bottom:8,left:8},innerPadding:Math.min(style.innerPadding,16)});
   const frame=document.createElement('div');frame.className='letter-frame letter-group-frame';
   Object.assign(frame.style,{width:style.width+'px',height:style.height+'px',background:rgba(style.frameBackground,style.frameBackgroundOpacity),
     display:'grid',gridTemplateColumns:'repeat('+columns+','+width+'px)',gridTemplateRows:'repeat('+rows+','+height+'px)',gap:gap+'px'});
   let count=1;
   for (const card of cards) {
-    const cell=document.createElement('div');
+    const cell=document.createElement('div');cell.className='letter-group-cell';
+    Object.assign(cell.style,{width:width+'px',height:height+'px',position:'relative',overflow:'hidden'});
     const result=await renderLetter(cell,card,childStyle,page,{...options,prepared:true});
+    Object.assign(result.frame.style,{position:'absolute',left:((width-logicalWidth*fit)/2)+'px',top:((height-logicalHeight*fit)/2)+'px',transformOrigin:'top left',transform:'scale('+fit+')'});
     count=Math.max(count,result.pages.length);frame.append(cell);
   }
   host.replaceChildren(frame);
