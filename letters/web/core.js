@@ -70,6 +70,14 @@ export function normalizeState(input = {}) {
     items.push({ id, title: text(item.title).slice(0, 100), text: content, done: !!item.done, ...(replyNote ? {replyNote} : {}) });
   }
   if (items.length > 300) throw new Error('お便りは300件まで登録できます。');
+  const groups = [], grouped = new Set(), groupIds = new Set();
+  for (const raw of Array.isArray(input.groups) ? input.groups : []) {
+    if (!raw || typeof raw.id !== 'string' || !/^[A-Za-z0-9_-]{1,120}$/.test(raw.id) || groupIds.has(raw.id)) continue;
+    const members = [...new Set(Array.isArray(raw.members) ? raw.members : [])].filter(id => ids.has(id) && !grouped.has(id)).slice(0,4);
+    if (members.length < 2) continue;
+    groupIds.add(raw.id); members.forEach(id => grouped.add(id));
+    groups.push({id:raw.id,title:text(raw.title).slice(0,100),members,layout:['vertical','horizontal','grid'].includes(raw.layout) ? raw.layout : 'grid'});
+  }
   const style = normalizeStyle(input.style), rawDraft = input.draft || {}, rawLive = input.live || {};
   if (text(rawDraft.text).length > 12000 || text(rawLive.text).length > 12000) {
     throw new Error('1件のお便りは12,000文字以内にしてください。');
@@ -80,6 +88,16 @@ export function normalizeState(input = {}) {
       title: text(rawLive.title).slice(0, 100), text: text(rawLive.text),
       page: Math.round(bounded(rawLive.page, 0, 0, 9999)), scroll: bounded(rawLive.scroll, 0, 0, 1),
       style: rawLive.style ? normalizeStyle(rawLive.style) : null}};
+  if (groups.length) result.groups = groups;
+  const group = groups.find(g=>g.id===rawDraft.groupId && g.members.includes(result.draft.id));
+  if (group) result.draft.groupId = group.id;
+  const cards = Array.isArray(rawLive.groupCards) ? rawLive.groupCards.slice(0,4).filter(c=>c && typeof c.id==='string' && text(c.text).trim() && text(c.text).length<=12000).map(c=>({id:c.id,title:text(c.title).slice(0,100),text:text(c.text)})) : [];
+  if (cards.length>=2 && typeof rawLive.groupId==='string') {
+    result.live.groupId=rawLive.groupId; result.live.groupCards=cards;
+    result.live.groupTitle=text(rawLive.groupTitle).slice(0,100);
+    result.live.groupLayout=['vertical','horizontal','grid'].includes(rawLive.groupLayout)?rawLive.groupLayout:'grid';
+    if (result.live.style) {result.live.style.readingMode='pages';result.live.style.autoHeight=false;}
+  }
   if (new TextEncoder().encode(JSON.stringify(result)).length > 800000) {
     throw new Error('一覧のデータが大きくなっています。バックアップを書き出し、お便りを配信ごとに分けてください。');
   }
@@ -112,21 +130,42 @@ export function selectItem(state, id) {
 export function newDraft(state) {
   saveDraft(state); state.selectedId = null; state.draft = {id: null, title: '', text: ''}; return state;
 }
+export function selectGroup(state, groupId) {
+  const group = state.groups?.find(g=>g.id===groupId);
+  if (!group) return state;
+  selectItem(state,group.members[0]); state.draft.groupId=group.id;
+  return state;
+}
+export function preparedValue(state) {
+  const group = state.groups?.find(g=>g.id===state.draft.groupId);
+  if (!group) return state.draft;
+  const groupCards=group.members.map(id=>state.items.find(i=>i.id===id)).filter(Boolean)
+    .map(i=>({id:i.id,title:i.id===state.draft.id?state.draft.title:i.title,text:i.id===state.draft.id?state.draft.text:i.text}));
+  if(groupCards.length<2)return state.draft;
+  return {...state.draft,groupId:group.id,groupTitle:group.title,groupLayout:group.layout,groupCards};
+}
+export const presentationId = value => value.groupId ? 'group:'+value.groupId : value.id;
 export function showDraft(state, liveStyle = state.style) {
   if (!state.draft.text.trim()) throw new Error('表示するお便りの本文を入力してください。');
   saveDraft(state);
   state.live = {visible: true, id: state.draft.id, text: state.draft.text, title: state.draft.title,
     page: 0, scroll: 0, style: clone(liveStyle)};
+  const prepared = preparedValue(state);
+  if (prepared.groupCards) Object.assign(state.live,{groupId:prepared.groupId,groupTitle:prepared.groupTitle,groupLayout:prepared.groupLayout,groupCards:clone(prepared.groupCards)});
   return state;
 }
 export function finishLive(state) {
-  const item = state.items.find(item => item.id === state.live.id);
-  if (item) item.done = true;
-  const index = state.items.findIndex(item => item.id === state.live.id);
-  if (state.draft.id !== state.live.id && state.draft.text.trim()) { state.live.visible = false; return state; }
-  const next = state.items.slice(index + 1).find(item => !item.done) || state.items.find(item => !item.done);
-  state.live.visible = false;
-  if (next) selectItem(state, next.id);
+  const aired = new Set(state.live.groupCards?.map(c=>c.id) || [state.live.id]);
+  for(const item of state.items) if(aired.has(item.id)) item.done=true;
+  const index=state.items.findIndex(item=>item.id===state.live.id);
+  const prepared=preparedValue(state);
+  if (presentationId(prepared)!==presentationId(state.live) && prepared.text.trim() && !aired.has(prepared.id)) {state.live.visible=false;return state;}
+  const next = state.items.slice(index+1).find(item=>!item.done) || state.items.find(item=>!item.done);
+  state.live.visible=false;
+  if(next) {
+    const group=state.groups?.find(g=>g.members.includes(next.id));
+    if(group)selectGroup(state,group.id);else selectItem(state,next.id);
+  }
   return state;
 }
 export function moveItem(state, id, destination) {
@@ -171,7 +210,7 @@ export function removeItems(state, ids) {
   // The aired text is an independent snapshot; deleting a queue item doesn't replace it.
   return state;
 }
-export const label = item => item.title || item.text.replace(/\s+/g, ' ').slice(0, 28) || '新しいお便り';
+export const label = item => (item.groupId && item.groupCards ? (item.groupTitle || 'まとめたお便り') + '（'+item.groupCards.length+'件）' : '') || item.title || item.text.replace(/\s+/g, ' ').slice(0, 28) || '新しいお便り';
 
 export function applyDisplayPreset(style, name) {
   if (name === 'clear') {
@@ -434,4 +473,29 @@ export function setScroll(frame, position, smooth = true) {
   body.style.transform = `translateY(${-maximum * fraction}px)`;
   const footer = frame.querySelector('.letter-footer');
   if (footer) footer.textContent = maximum > 0 ? `${Math.round(fraction * 100)}%` : '';
+}
+ 
+// Group canvas uses the same card renderer, with synchronized pagination.
+export async function renderPresentation(host, value, rawStyle, page=0, options={}) {
+  const cards=value.groupCards;
+  if (!cards || cards.length<2) return renderLetter(host,value,rawStyle,page,options);
+  if(cards.some(card=>!card.text.trim()))throw new Error('グループ内の本文が空です。');
+  const style=normalizeStyle({...rawStyle,autoHeight:false,readingMode:'pages'});
+  const layout=value.groupLayout, columns=layout==='horizontal'?cards.length:layout==='vertical'?1:2;
+  const rows=Math.ceil(cards.length/columns), gap=12;
+  const width=Math.floor((style.width-gap*(columns-1))/columns),height=Math.floor((style.height-gap*(rows-1))/rows);
+  if(width<320 || height<180)throw new Error('カードの領域が足りません。枠の幅・高さを広げるか、配置を変更してください。');
+  const childStyle=normalizeStyle({...style,width,height,frameBackgroundOpacity:0,showIcon:false,
+    padding:{top:8,right:8,bottom:8,left:8},innerPadding:Math.min(style.innerPadding,16)});
+  const frame=document.createElement('div');frame.className='letter-frame letter-group-frame';
+  Object.assign(frame.style,{width:style.width+'px',height:style.height+'px',background:rgba(style.frameBackground,style.frameBackgroundOpacity),
+    display:'grid',gridTemplateColumns:'repeat('+columns+','+width+'px)',gridTemplateRows:'repeat('+rows+','+height+'px)',gap:gap+'px'});
+  let count=1;
+  for (const card of cards) {
+    const cell=document.createElement('div');
+    const result=await renderLetter(cell,card,childStyle,page,{...options,prepared:true});
+    count=Math.max(count,result.pages.length);frame.append(cell);
+  }
+  host.replaceChildren(frame);
+  return {frame,style,pages:Array(count).fill(''),page:Math.max(0,Math.min(count-1,page)),scrollMax:0,viewportHeight:height};
 }
