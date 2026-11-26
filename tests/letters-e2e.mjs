@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {createRequire} from 'node:module';
-import {importText, normalizeState, newDraft, showDraft, moveItem, removeItem, selectItem, selectGroup, finishLive, groupColumns} from '../letters/web/core.js';
+import {importText, normalizeState, newDraft, showDraft, moveItem, removeItem, selectItem, selectGroup, finishLive, groupColumns, stepScroll} from '../letters/web/core.js';
 import {UI_THEMES, contrast} from '../letters/web/themes.js';
 import {analysePaste} from '../letters/web/imports.js';
 const {chromium} = createRequire(import.meta.url)('playwright');
@@ -35,6 +35,11 @@ async function saved() { await until(async () => (await page.locator('#save-stat
 
 try {
   // Check large group normalization before any browser interactions.
+  assert.equal(stepScroll(0,1,{scrollMax:1944,viewportHeight:960},'horizontal-scroll'),.5);
+  assert.equal(stepScroll(.5,1,{scrollMax:1944,viewportHeight:960},'horizontal-scroll'),1);
+  assert.equal(stepScroll(1,1,{scrollMax:1944,viewportHeight:960},'horizontal-scroll',true),0);
+  assert.equal(stepScroll(0,-1,{scrollMax:1944,viewportHeight:960},'horizontal-scroll',true),1);
+  assert.equal(stepScroll(0,1,{scrollMax:1080,viewportHeight:540},'vertical-scroll'),.45);
   const manyItems=Array.from({length:18},(_,i)=>({id:'many-'+i,title:'回答 '+i,text:'本文 '+i,replyNote:'個別メモ '+i,done:false}));
   const many=normalizeState({items:manyItems,groups:[{id:'many-group',members:manyItems.slice(0,16).map(i=>({id:i.id})),layout:'grid',replyNote:'共通メモ'},{id:'other-group',members:manyItems.slice(16).map(i=>({id:i.id})),layout:'grid'}]});
   assert.equal(many.groups[0].members.length,16);assert.equal(groupColumns('grid',16),4);
@@ -1049,6 +1054,14 @@ try {
     await saved();await until(async()=>(await get()).state.live.scroll===1,'live group scroll did not reach end');
     await until(async()=>await liveStrip.locator('.letter-group-track').evaluate(el=>{const frame=el.parentElement.getBoundingClientRect(),last=el.lastElementChild.getBoundingClientRect();return el.parentElement.dataset.scrollAxis==='x'?Math.abs(last.right-frame.right)<2:Math.abs(last.bottom-frame.bottom)<2;}),'final card not fully reached');
     await display.screenshot({path:path.join(artifacts,'group-'+layout+'-end.png'),omitBackground:true});
+    assert(await page.locator('#live-next').isDisabled());
+    await page.locator('#live-loop').check();
+    await page.locator('#live-next').click();await saved();
+    assert.equal((await get()).state.live.scroll,0);
+    await page.locator('#live-prev').click();await saved();
+    assert.equal((await get()).state.live.scroll,1);
+    await page.locator('#live-loop').uncheck();
+    assert(await page.locator('#live-next').isDisabled());
   }
   pass('vertical and horizontal group strips retain card dimensions and reach the final card; preview and live scroll independently');
 
