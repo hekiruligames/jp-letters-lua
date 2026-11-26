@@ -941,6 +941,50 @@ try {
   pass('reply notes survive switching, reload, and backup; management editing and clearing work; preview and live rendering exclude them');
 
 
+
+  // A group is independent of the original queue and the live snapshot.
+  const groupBefore=await get();
+  const groupItems=['a','b','c','d'].map(id=>({id:'group-'+id,title:'回答 '+id,text:'学生の回答 '+id,done:false,replyNote:'非公開 '+id}));
+  const groupFixtureState=normalizeState({...groupBefore.state,groups:[],items:groupItems,selectedId:'group-a',draft:{id:'group-a',title:groupItems[0].title,text:groupItems[0].text,replyNote:groupItems[0].replyNote},style:{...groupBefore.state.style,width:960,height:540,fontSize:24,autoHeight:false,readingMode:'pages'},live:{visible:false}});
+  const groupFixture=await fetch(`${origin}/api/state/${connection.sourceId}`,{method:'POST',headers:{...auth,'Content-Type':'application/json'},body:JSON.stringify({expectedRevision:groupBefore.revision,state:groupFixtureState})});
+  assert.equal(groupFixture.status,200);
+  await until(async()=>await page.locator('#queue-count').textContent()==='4','group fixture not synced');
+  await page.setViewportSize({width:1200,height:900});
+  await page.locator('#manager-open').click();
+  for(const id of ['a','b','c'])await manager.locator('[data-id="group-'+id+'"] input').check();
+  await page.locator('#manager-group-create').click();
+  await page.locator('#group-title').fill('似た回答');
+  await page.locator('#group-members li').nth(1).getByRole('button',{name:'↑',exact:true}).click();
+  await page.locator('#group-form button[type=submit]').click(); await saved();
+  const grouped=(await get()).state;
+  assert.deepEqual(grouped.items,groupFixtureState.items);
+  assert.deepEqual(grouped.groups[0].members.map(m=>m.id),['group-b','group-a','group-c']);
+  await manager.locator('.manager-group-row').getByRole('button',{name:'配信の準備',exact:true}).click(); await saved();
+  await page.locator('#manager-done').click();
+  await until(async()=>await page.locator('#preview-host .letter-text').count()===3,'group preview not rendered');
+  assert.deepEqual(await page.locator('#preview-host .letter-text').allTextContents(),['学生の回答 b','学生の回答 a','学生の回答 c']);
+  await page.locator('#show-letter').click(); await saved();
+  await until(async()=>await display.locator('.letter-group-frame .letter-text').count()===3,'group not rendered on OBS');
+  const groupLive=(await get()).state.live;
+  assert.equal(groupLive.groupCards.length,3);
+  assert(!JSON.stringify(groupLive).includes('非公開'));
+  await page.locator('#group-preparation select').selectOption('horizontal');await saved();
+  assert.deepEqual((await get()).state.live,groupLive);
+  await page.locator('#group-preparation select').selectOption('grid');await saved();
+  await page.screenshot({path:path.join(artifacts,'group-preview.png')});
+  await display.screenshot({path:path.join(artifacts,'group-output.png'),omitBackground:true});
+  await page.locator('#finish-next-live').click();await saved();
+  const groupFinished=(await get()).state;
+  assert(groupFinished.items.slice(0,3).every(i=>i.done));
+  assert.equal(groupFinished.live.id,'group-d');
+  await page.locator('#manager-open').click();
+  page.once('dialog',d=>d.accept());
+  await manager.locator('.manager-group-row').getByRole('button',{name:'グループ解除'}).click();await saved();
+  assert.equal((await get()).state.groups,undefined);
+  assert.equal((await get()).state.items.length,4);
+  await page.locator('#manager-done').click();
+  pass('group creation and reordering preserve originals; multiple cards preview and air together; editing layout preserves live; finish marks all and ungroup retains originals');
+
   assert.deepEqual(browserErrors, []);
   pass('desktop and narrow layouts stay usable without horizontal overflow or browser errors');
   await fs.writeFile(path.join(artifacts, 'results.json'), JSON.stringify({passed, runtime: 'Linux libobs 30.2.3 + actual OBS LuaJIT + Chromium', caveat: 'OBS browser API is a stand-in in the host; the HTML renderer is exercised in real Chromium. macOS and Windows runtimes are not run here.'}, null, 2));
