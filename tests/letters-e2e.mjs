@@ -1024,6 +1024,34 @@ try {
   await page.screenshot({path:path.join(artifacts,'group-16-reader.png'),fullPage:true});
   pass('sixteen cards fit in a fixed-size group canvas and all original texts are available to the operator');
 
+  // The viewport size stays fixed while the whole card strip moves independently.
+  for(const [layout,axis] of [['vertical-scroll','y'],['horizontal-scroll','x']]){
+    const previousLive=(await get()).state.live;
+    await page.locator('#group-preparation select').selectOption(layout); await saved();
+    const previewStrip=page.locator('#preview-host .letter-group-strip');
+    await until(async()=>await previewStrip.count()===1 && await previewStrip.getAttribute('data-scroll-axis')===axis,'group strip preview not ready',20000);
+    assert(Number(await previewStrip.getAttribute('data-scroll-max'))>0);
+    assert.equal(await previewStrip.locator('.letter-group-track > .letter-frame').count(),16);
+    assert.deepEqual((await get()).state.live,previousLive);
+    await page.locator('#preview-next').click();
+    assert.notEqual(await page.locator('#preview-scroll').inputValue(),'0');
+    assert.deepEqual((await get()).state.live,previousLive);
+    await page.locator('#show-letter').click();await saved();
+    const liveStrip=display.locator('.letter-group-strip');
+    await until(async()=>await liveStrip.count()===1 && await liveStrip.getAttribute('data-scroll-axis')===axis && (await get()).renderedLiveRevision===(await get()).liveRevision,'live group strip not ready',20000);
+    assert.equal((await get()).state.live.style.readingMode,'scroll');
+    assert.equal((await get()).state.live.scroll,0);
+    const frameBox=await liveStrip.boundingBox();
+    assert.equal(frameBox.width,960);assert.equal(frameBox.height,540);
+    await page.locator('#live-next').click();await saved();
+    assert((await get()).state.live.scroll>0);
+    await page.locator('#live-scroll').evaluate(el=>{el.value='1000';el.dispatchEvent(new Event('input',{bubbles:true}));});
+    await saved();await until(async()=>(await get()).state.live.scroll===1,'live group scroll did not reach end');
+    await until(async()=>await liveStrip.locator('.letter-group-track').evaluate(el=>{const frame=el.parentElement.getBoundingClientRect(),last=el.lastElementChild.getBoundingClientRect();return el.parentElement.dataset.scrollAxis==='x'?Math.abs(last.right-frame.right)<2:Math.abs(last.bottom-frame.bottom)<2;}),'final card not fully reached');
+    await display.screenshot({path:path.join(artifacts,'group-'+layout+'-end.png'),omitBackground:true});
+  }
+  pass('vertical and horizontal group strips retain card dimensions and reach the final card; preview and live scroll independently');
+
   assert.deepEqual(browserErrors, []);
   pass('desktop and narrow layouts stay usable without horizontal overflow or browser errors');
   await fs.writeFile(path.join(artifacts, 'results.json'), JSON.stringify({passed, runtime: 'Linux libobs 30.2.3 + actual OBS LuaJIT + Chromium', caveat: 'OBS browser API is a stand-in in the host; the HTML renderer is exercised in real Chromium. macOS and Windows runtimes are not run here.'}, null, 2));
