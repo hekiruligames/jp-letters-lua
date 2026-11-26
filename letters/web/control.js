@@ -553,8 +553,8 @@ function renderManager() {
       const checkbox = document.createElement('input'); checkbox.type = 'checkbox';
       checkbox.setAttribute('aria-label', `${index+1}. ${Core.label(item)}を選択`);
       checkbox.addEventListener('change', () => { if (checkbox.checked) managerSelection.add(item.id); else managerSelection.delete(item.id); updateManagerSelection(); });
-      const handle = document.createElement('button'); handle.className = 'manager-handle'; handle.textContent = '⠿'; handle.draggable = true;
-      handle.setAttribute('aria-label', `${Core.label(item)}をドラッグして移動`);
+      const handle = document.createElement('span'); handle.className = 'manager-handle'; handle.textContent = '⠿'; handle.draggable = true;
+      handle.setAttribute('aria-label', `${Core.label(item)}をドラッグして移動`); handle.setAttribute('role','img');
       handle.addEventListener('dragstart', event => {
         if (blocked) { event.preventDefault(); return; }
         if (!managerSelection.has(item.id)) { managerSelection = new Set([item.id]); updateManagerSelection(); }
@@ -598,7 +598,7 @@ $('manager-open').addEventListener('click', () => {
   if (!state || blocked) return;
   managerSource = sourceId; managerSelection.clear(); managerKey = ''; managerDrag = null;
   $('manager-position').value = 1; $('manager-message').textContent = ''; $('manager-search').value = ''; $('manager-filter').value = 'all';
-  $('manager-dialog').showModal(); renderManager();
+  $('manager-dialog').showModal(); renderManager(); renderGroups();
 });
 for (const id of ['manager-close','manager-done']) $(id).addEventListener('click', () => $('manager-dialog').close());
 $('manager-dialog').addEventListener('close', () => { managerSelection.clear(); managerKey = ''; managerSource = ''; managerDrag = null; });
