@@ -209,7 +209,7 @@ async function updatePreview() {
   $('preview-empty').hidden = !!draft.text.trim();
   if (!draft.text.trim()) {
     $('preview-host').replaceChildren(); previewCount = 1; previewError = '';
-    previewStyle = null; previewMetrics = {scrollMax: 0, viewportHeight: 1}; $('preview-scroll').hidden = true;
+    previewStyle = null; previewMetrics = {scrollMax: 0, viewportHeight: 1}; $('preview-scroll').hidden = true; $('preview-loop-row').hidden=true;
     $('preview-page').textContent = '—'; $('preview-prev').disabled = true; $('preview-next').disabled = true;
     $('show-letter').disabled = true;
     $('preview-info').textContent = '長文は読みやすい文字サイズのままページに分けます。'; $('preview-info').classList.remove('error');
@@ -245,9 +245,10 @@ async function updatePreview() {
 function preparedGroupLayout(){return state?.groups?.find(g=>g.id===state.draft.groupId)?.layout;}
 function previewScrolling(){return state?.draft.groupId ? Core.isGroupScroll(preparedGroupLayout()) : state?.style.readingMode==='scroll';}
 function updatePreviewNavigation() {
-  const scrolling = previewScrolling();
-  $('preview-prev').disabled = previewError || (scrolling ? previewScroll <= 0 || previewMetrics.scrollMax <= 0 : previewPage <= 0);
-  $('preview-next').disabled = previewError || (scrolling ? previewScroll >= 1 || previewMetrics.scrollMax <= 0 : previewPage >= previewCount - 1);
+  const scrolling = previewScrolling(), groupScroll=Core.isGroupScroll(preparedGroupLayout()), loop=groupScroll&&$('preview-loop').checked;
+  $('preview-loop-row').hidden=!groupScroll;
+  $('preview-prev').disabled = !!previewError || (scrolling ? (!loop && previewScroll <= 0) || previewMetrics.scrollMax <= 0 : previewPage <= 0);
+  $('preview-next').disabled = !!previewError || (scrolling ? (!loop && previewScroll >= 1) || previewMetrics.scrollMax <= 0 : previewPage >= previewCount - 1);
   $('preview-scroll').disabled = previewError || previewMetrics.scrollMax <= 0;
   if (scrolling) {
     $('preview-page').textContent = `${Math.round(previewScroll * 100)}%`; setInput('preview-scroll', Math.round(previewScroll * 1000));
@@ -277,8 +278,10 @@ function updateLive() {
   $('live-prev').textContent = scrolling ? (horizontal?'← 左へスクロール':'↑ 上へスクロール') : '← 前のページ'; $('live-next').textContent = scrolling ? (horizontal?'右へスクロール →':'下へスクロール ↓') : '次のページ →';
   $('live-prev').setAttribute('aria-label', scrolling ? (horizontal?'表示中のカードを左へ':'表示中の文章を上へ') : '配信中の前のページ');
   $('live-next').setAttribute('aria-label', scrolling ? (horizontal?'表示中のカードを右へ':'表示中の文章を下へ') : '配信中の次のページ');
-  $('live-prev').disabled = !onAir || (scrolling ? live.scroll <= 0 || liveMetrics.scrollMax <= 0 : live.page <= 0);
-  $('live-next').disabled = !onAir || (scrolling ? live.scroll >= 1 || liveMetrics.scrollMax <= 0 : live.page >= liveCount - 1);
+  const groupScroll=Core.isGroupScroll(live.groupLayout),loop=groupScroll&&$('live-loop').checked;
+  $('live-loop-row').hidden=!onAir||!groupScroll;
+  $('live-prev').disabled = !onAir || (scrolling ? (!loop&&live.scroll <= 0) || liveMetrics.scrollMax <= 0 : live.page <= 0);
+  $('live-next').disabled = !onAir || (scrolling ? (!loop&&live.scroll >= 1) || liveMetrics.scrollMax <= 0 : live.page >= liveCount - 1);
   $('live-scroll-row').hidden = !onAir || !scrolling; $('live-scroll').disabled = !onAir || liveMetrics.scrollMax <= 0;
   setInput('live-scroll', Math.round(live.scroll * 1000));
   $('hide-live').disabled = !onAir; $('finish-live').disabled = !onAir;
@@ -298,6 +301,7 @@ function updateLive() {
 function render() { if (state) { renderUI(); renderInputs(); renderQueue(); updateLive(); updatePreview(); } }
 
 async function loadSource(id) {
+  $('preview-loop').checked=false; $('live-loop').checked=false;
   if ($('group-dialog').open) $('group-dialog').close();
   if ($('manager-edit-dialog').open) $('manager-edit-dialog').close();
   if ($('manager-dialog').open) $('manager-dialog').close();
@@ -380,8 +384,7 @@ $('show-letter').addEventListener('click', show);
 function changeLivePage(delta) {
   mutate(s => {
     if (s.live.style?.readingMode === 'scroll') {
-      const step = liveMetrics.scrollMax > 0 ? 0.85 * liveMetrics.viewportHeight / liveMetrics.scrollMax : 0;
-      s.live.scroll = Math.max(0, Math.min(1, s.live.scroll + delta * step));
+      s.live.scroll = Core.stepScroll(s.live.scroll,delta,liveMetrics,s.live.groupLayout,$('live-loop').checked);
     } else s.live.page = Math.max(0, Math.min(liveCount - 1, s.live.page + delta));
   }, false, false);
   flush().catch(() => {});
@@ -397,9 +400,11 @@ $('live-reading-mode').addEventListener('change', () => {
   toast(`${mode === 'scroll' ? 'スクロール' : 'ページ送り'}に切り替え、配信中のお便りを先頭から表示します。`);
 });
 for (const [id, delta] of [['preview-prev', -1], ['preview-next', 1]]) $(id).addEventListener('click', () => {
-  if (previewScrolling()) movePreviewScroll(previewScroll + delta * (previewMetrics.scrollMax > 0 ? .85 * previewMetrics.viewportHeight / previewMetrics.scrollMax : 0));
+  if (previewScrolling()) movePreviewScroll(Core.stepScroll(previewScroll,delta,previewMetrics,preparedGroupLayout(),$('preview-loop').checked));
   else { previewPage = Math.max(0, Math.min(previewCount - 1, previewPage + delta)); updatePreview(); }
 });
+$('preview-loop').addEventListener('change',()=>{if(state)updatePreviewNavigation();});
+$('live-loop').addEventListener('change',()=>{if(state)updateLive();});
 $('preview-scroll').addEventListener('input', () => movePreviewScroll(Number($('preview-scroll').value) / 1000));
 $('preview-viewport').addEventListener('wheel', event => {
   if (!state || !previewScrolling() || previewMetrics.scrollMax <= 0) return;
