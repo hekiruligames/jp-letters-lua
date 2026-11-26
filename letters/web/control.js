@@ -119,7 +119,7 @@ function renderUI() {
   $('ui-contrast').textContent = ratio < 4.5 ? '文字と背景が近い色です。文字色を濃くすると読みやすくなります。' : 'この配色は文字を読みやすい濃さにしています。';
 }
 function renderInputs() {
-  setInput('draft-title', state.draft.title); setInput('draft-text', state.draft.text);
+  setInput('draft-title', state.draft.title); setInput('draft-text', state.draft.text); setInput('reply-note', state.draft.replyNote || '');
   $('character-count').textContent = `${Array.from(state.draft.text).length.toLocaleString('ja-JP')}文字`;
   for (const key of ['fontSize', 'lineHeight', 'align', 'verticalAlign', 'textColor', 'outlineColor',
     'outlineWidth', 'width', 'height', 'radius', 'innerPadding', 'background', 'frameBackground']) setInput(key, state.style[key]);
@@ -350,6 +350,15 @@ $('new-letter').addEventListener('click', () => { previewPage = 0; previewScroll
 for (const [id, key] of [['draft-title', 'title'], ['draft-text', 'text']]) $(id).addEventListener('input', () => {
   const value = $(id).value; previewPage = 0; previewScroll = 0; mutate(s => { s.draft[key] = value; });
 });
+$('reply-note').addEventListener('input', () => {
+  const replyNote = $('reply-note').value;
+  mutate(s => {
+    const item = s.items.find(item => item.id === s.draft.id);
+    for (const target of [s.draft,item].filter(Boolean)) {
+      if (replyNote) target.replyNote = replyNote; else delete target.replyNote;
+    }
+  }, false, false);
+});
 $('save-draft').addEventListener('click', () => { if (mutate(Core.saveDraft, true)) toast('一覧に保存しました。配信への表示は変わりません。'); });
 async function show() {
   if (!state || !state.draft.text.trim()) return;
@@ -496,8 +505,8 @@ $('undo').addEventListener('click', () => { const previous = undoStack.pop(); if
 function managerItems() {
   if (!state) return [];
   const search = $('manager-search').value.trim().toLocaleLowerCase('ja'), mode = $('manager-filter').value;
-  return state.items.map(item => item.id === state.draft.id ? {...item, title:state.draft.title,text:state.draft.text} : item)
-    .filter(item => (mode === 'all' || (mode === 'done') === item.done) && (item.title+' '+item.text).toLocaleLowerCase('ja').includes(search));
+  return state.items.map(item => item.id === state.draft.id ? {...item, title:state.draft.title,text:state.draft.text,replyNote:state.draft.replyNote || ''} : item)
+    .filter(item => (mode === 'all' || (mode === 'done') === item.done) && (item.title+' '+item.text+' '+(item.replyNote || '')).toLocaleLowerCase('ja').includes(search));
 }
 function updateManagerSelection() {
   if (!state || !$('manager-dialog').open) return;
@@ -545,7 +554,7 @@ function renderManager() {
         managerDrag = [...managerSelection]; event.dataTransfer.setData('text/plain', item.id); event.dataTransfer.effectAllowed = 'move';
       });
       handle.addEventListener('dragend', () => { managerDrag = null; list.querySelectorAll('.drop-target').forEach(el => el.classList.remove('drop-target')); });
-      row.addEventListener('dragover', event => { if (managerDrag && !managerDrag.includes(item.id)) { event.preventDefault(); row.classList.add('drop-target'); } });
+      row.addEventListener('dragover', event => { if (managerDrag && !managerDrag.includes(item.id)) { event.preventDefault(); event.dataTransfer.dropEffect = 'move'; row.classList.add('drop-target'); } });
       row.addEventListener('dragleave', () => row.classList.remove('drop-target'));
       row.addEventListener('drop', event => { event.preventDefault(); row.classList.remove('drop-target'); if (managerDrag && !managerDrag.includes(item.id)) moveManaged('before',item.id); managerDrag = null; });
       const number = document.createElement('span'); number.className = 'manager-number'; number.textContent = String(index+1).padStart(2,'0');
@@ -555,7 +564,9 @@ function renderManager() {
       const actions = document.createElement('div'); actions.className = 'manager-row-actions';
       const edit = document.createElement('button'); edit.textContent = '編集'; edit.addEventListener('click',()=>openManagerEdit(item.id));
       const prepare = document.createElement('button'); prepare.textContent = '配信の準備'; prepare.addEventListener('click',()=>{ previewPage=0; previewScroll=0; if(mutate(s=>Core.selectItem(s,item.id))) toast('準備中のお便りに設定しました。配信表示は変わりません。'); });
-      actions.append(edit,prepare); content.append(title,body,actions);
+      actions.append(edit,prepare); content.append(title,body);
+      if (item.replyNote) { const note = document.createElement('p'); note.className = 'manager-reply-note'; note.textContent = '返答用メモ：'+item.replyNote; content.append(note); }
+      content.append(actions);
       const status = document.createElement('span'); status.className = 'manager-status'; status.textContent = item.done ? '✓ 紹介済み' : '未紹介';
       row.append(checkbox,handle,number,content,status); return row;
     }));
@@ -617,10 +628,11 @@ function openManagerEdit(id=null) {
   const item = id ? state.items.find(item=>item.id===id) : null;
   if (id && !item) return;
   const original = item && id === state.draft.id ? state.draft : item;
-  managerEdit = {id,source:sourceId,original:original ? {title:original.title,text:original.text} : null};
+  managerEdit = {id,source:sourceId,original:original ? {title:original.title,text:original.text,replyNote:original.replyNote || ''} : null};
   $('manager-edit-heading').textContent = id ? 'お便りを編集' : 'お便りを新規作成';
   $('manager-edit-title').value = original?.title || '';
   $('manager-edit-text').value = original?.text || '';
+  $('manager-edit-reply').value = original?.replyNote || '';
   $('manager-edit-error').textContent = '';
   $('manager-edit-dialog').showModal();
   $('manager-edit-text').focus();
@@ -632,20 +644,22 @@ $('manager-edit-form').addEventListener('submit',event=>{
   event.preventDefault();
   if (!managerEdit || blocked || managerEdit.source!==sourceId) return;
   const {id,original}=managerEdit;
-  const title=$('manager-edit-title').value,text=$('manager-edit-text').value;
+  const title=$('manager-edit-title').value,text=$('manager-edit-text').value,replyNote=$('manager-edit-reply').value;
   const error = message => { $('manager-edit-error').textContent=message; };
   if (!text.trim()) return error('本文を入力してください。');
   if (/^https?:\/\/(?:www\.)?marshmallow-qa\.com\/\S+\s*$/.test(text)) return error('URLではなく本文を貼り付けてください。');
   if (!id && state.items.length>=300) return error('お便りは300件まで登録できます。');
   if (id) {
     const item=state.items.find(item=>item.id===id), current=id===state.draft.id ? state.draft : item;
-    if (!item || current.title!==original.title || current.text!==original.text) return error('別の操作で内容が変わりました。閉じて開き直してください。');
+    if (!item || current.title!==original.title || current.text!==original.text || (current.replyNote || '')!==original.replyNote) return error('別の操作で内容が変わりました。閉じて開き直してください。');
   }
   if (mutate(s=>{
     if (id) {
-      Object.assign(s.items.find(item=>item.id===id),{title,text});
-      if (s.draft.id===id) Object.assign(s.draft,{title,text});
-    } else s.items.push({id:Core.uid(),title,text,done:false});
+      const item = s.items.find(item=>item.id===id);
+      for (const target of [item,s.draft.id===id ? s.draft : null].filter(Boolean)) {
+        Object.assign(target,{title,text}); if (replyNote) target.replyNote=replyNote; else delete target.replyNote;
+      }
+    } else s.items.push({id:Core.uid(),title,text,done:false,...(replyNote ? {replyNote} : {})});
   },true)) {
     $('manager-edit-dialog').close(); toast('一覧に保存しました。配信中の表示は変わりません。'); flush().catch(()=>{});
   }
