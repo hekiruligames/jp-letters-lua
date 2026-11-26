@@ -73,10 +73,10 @@ export function normalizeState(input = {}) {
   const groups = [], grouped = new Set(), groupIds = new Set();
   for (const raw of Array.isArray(input.groups) ? input.groups : []) {
     if (!raw || typeof raw.id !== 'string' || !/^[A-Za-z0-9_-]{1,120}$/.test(raw.id) || groupIds.has(raw.id)) continue;
-    const members = [...new Set(Array.isArray(raw.members) ? raw.members : [])].filter(id => ids.has(id) && !grouped.has(id)).slice(0,4);
+    const members = [...new Set(Array.isArray(raw.members) ? raw.members.map(m=>m?.id) : [])].filter(id => ids.has(id) && !grouped.has(id)).slice(0,4);
     if (members.length < 2) continue;
     groupIds.add(raw.id); members.forEach(id => grouped.add(id));
-    groups.push({id:raw.id,title:text(raw.title).slice(0,100),members,layout:['vertical','horizontal','grid'].includes(raw.layout) ? raw.layout : 'grid'});
+    groups.push({id:raw.id,title:text(raw.title).slice(0,100),members:members.map(id=>({id})),layout:['vertical','horizontal','grid'].includes(raw.layout) ? raw.layout : 'grid'});
   }
   const style = normalizeStyle(input.style), rawDraft = input.draft || {}, rawLive = input.live || {};
   if (text(rawDraft.text).length > 12000 || text(rawLive.text).length > 12000) {
@@ -89,7 +89,7 @@ export function normalizeState(input = {}) {
       page: Math.round(bounded(rawLive.page, 0, 0, 9999)), scroll: bounded(rawLive.scroll, 0, 0, 1),
       style: rawLive.style ? normalizeStyle(rawLive.style) : null}};
   if (groups.length) result.groups = groups;
-  const group = groups.find(g=>g.id===rawDraft.groupId && g.members.includes(result.draft.id));
+  const group = groups.find(g=>g.id===rawDraft.groupId && g.members.some(m=>m.id===result.draft.id));
   if (group) result.draft.groupId = group.id;
   const cards = Array.isArray(rawLive.groupCards) ? rawLive.groupCards.slice(0,4).filter(c=>c && typeof c.id==='string' && text(c.text).trim() && text(c.text).length<=12000).map(c=>({id:c.id,title:text(c.title).slice(0,100),text:text(c.text)})) : [];
   if (cards.length>=2 && typeof rawLive.groupId==='string') {
@@ -133,13 +133,13 @@ export function newDraft(state) {
 export function selectGroup(state, groupId) {
   const group = state.groups?.find(g=>g.id===groupId);
   if (!group) return state;
-  selectItem(state,group.members[0]); state.draft.groupId=group.id;
+  selectItem(state,group.members[0].id); state.draft.groupId=group.id;
   return state;
 }
 export function preparedValue(state) {
   const group = state.groups?.find(g=>g.id===state.draft.groupId);
   if (!group) return state.draft;
-  const groupCards=group.members.map(id=>state.items.find(i=>i.id===id)).filter(Boolean)
+  const groupCards=group.members.map(m=>state.items.find(i=>i.id===m.id)).filter(Boolean)
     .map(i=>({id:i.id,title:i.id===state.draft.id?state.draft.title:i.title,text:i.id===state.draft.id?state.draft.text:i.text}));
   if(groupCards.length<2)return state.draft;
   return {...state.draft,groupId:group.id,groupTitle:group.title,groupLayout:group.layout,groupCards};
@@ -163,7 +163,7 @@ export function finishLive(state) {
   const next = state.items.slice(index+1).find(item=>!item.done) || state.items.find(item=>!item.done);
   state.live.visible=false;
   if(next) {
-    const group=state.groups?.find(g=>g.members.includes(next.id));
+    const group=state.groups?.find(g=>g.members.some(m=>m.id===next.id));
     if(group)selectGroup(state,group.id);else selectItem(state,next.id);
   }
   return state;
