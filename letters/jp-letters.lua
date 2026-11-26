@@ -247,8 +247,20 @@ local function shortcut(record, action)
     else
         local style = obs.obs_data_get_obj(live, "style")
         if style and obs.obs_data_get_string(style, "readingMode") == "scroll" then
-            local step = record.scroll_max and record.scroll_max > 0 and 0.85 * record.viewport_height / record.scroll_max or 0
-            local position = obs.obs_data_get_double(live, "scroll") + (action == "next" and step or -step)
+            local maximum, extent = record.scroll_max or 0, record.viewport_height or 0
+            local layout = obs.obs_data_get_string(live, "groupLayout")
+            local direction = action == "next" and 1 or -1
+            local position = obs.obs_data_get_double(live, "scroll")
+            if maximum > 0 and extent > 0 then
+                if layout == "horizontal-scroll" then
+                    local stride = extent + 12
+                    local at = position * maximum / stride
+                    local target = direction > 0 and math.floor(at + 0.000001) + 1 or math.ceil(at - 0.000001) - 1
+                    position = target * stride / maximum
+                else
+                    position = position + direction * (layout == "vertical-scroll" and 0.9 or 0.85) * extent / maximum
+                end
+            end
             obs.obs_data_set_double(live, "scroll", math.max(0, math.min(1, position)))
         else
             local page = obs.obs_data_get_int(live, "page")
