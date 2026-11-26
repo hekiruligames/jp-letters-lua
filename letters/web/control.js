@@ -130,7 +130,7 @@ function renderInputs() {
   setInput('frameBackgroundOpacity', Math.round(state.style.frameBackgroundOpacity * 100));
   $('frame-opacity-value').textContent = `${Math.round(state.style.frameBackgroundOpacity * 100)}%`;
   $('frameBackgroundOpacity').style.setProperty('--range-progress', `${state.style.frameBackgroundOpacity * 100}%`);
-  setInput('readingMode', state.style.readingMode); renderFonts();
+  setInput('readingMode', state.draft.groupId ? 'pages' : state.style.readingMode); $('readingMode').disabled=!!state.draft.groupId; renderFonts();
   $('auto-height').setAttribute('aria-pressed', String(state.style.autoHeight));
   $('height-label').textContent = state.style.autoHeight ? '最大の高さ' : '枠の高さ';
   setInput('quick-width', state.style.width); setInput('quick-height', state.style.height);
@@ -176,6 +176,8 @@ function renderQueue() {
     const heading = document.createElement('span'); heading.className = 'item-heading';
     const index = document.createElement('span'); index.className = 'item-index'; index.textContent = String(state.items.indexOf(item) + 1).padStart(2, '0');
     const title = document.createElement('strong'); title.textContent = Core.label(item); heading.append(index, title);
+    const grouped = state.groups?.find(g=>g.members.some(m=>m.id===item.id));
+    if(grouped){const badge=document.createElement('span');badge.className='item-done';badge.textContent='組';heading.append(badge);}
     if (item.done) { const badge = document.createElement('span'); badge.className = 'item-done'; badge.textContent = '✓ 済'; heading.append(badge); }
     const snippet = document.createElement('span'); snippet.className = 'item-snippet'; snippet.textContent = item.text;
     button.append(heading, snippet); button.addEventListener('click', () => { previewPage = 0; previewScroll = 0; mutate(s => Core.selectItem(s, item.id)); });
@@ -190,6 +192,7 @@ function renderQueue() {
   renderDeleteDialog();
   updateBulkSelection();
   renderManager();
+  renderGroups();
 }
 function scalePreview() {
   if (!state) return;
@@ -200,7 +203,7 @@ function scalePreview() {
 }
 async function updatePreview() {
   if (!state) return;
-  const serial = ++previewSerial, draft = Core.clone(state.draft), style = Core.clone(state.style);
+  const serial = ++previewSerial, draft = Core.clone(Core.preparedValue(state)), style = Core.clone(state.style);
   previewController?.abort(); previewController = new AbortController();
   $('preview-size').textContent = `${style.width} × ${style.height}`;
   $('preview-empty').hidden = !!draft.text.trim();
@@ -215,14 +218,14 @@ async function updatePreview() {
   try {
     updateFontHelp(style.font);
     const scratch = document.createElement('div');
-    const result = await Core.renderLetter(scratch, {...draft, scroll: previewScroll}, style, previewPage, {signal: previewController.signal});
+    const result = await Core.renderPresentation(scratch, {...draft, scroll: previewScroll}, style, previewPage, {signal: previewController.signal});
     if (serial !== previewSerial) return;
     updateFontHelp(style.font);
     $('preview-host').replaceChildren(result.frame); previewCount = result.pages.length; previewPage = result.page;
     previewError = '';
     previewMetrics = result; previewStyle = result.style; scalePreview();
     $('preview-size').textContent = `${result.style.width} × ${result.style.height}${style.autoHeight ? '（自動）' : ''}`;
-    const scrolling = style.readingMode === 'scroll'; $('preview-scroll').hidden = !scrolling;
+    const scrolling = result.style.readingMode === 'scroll'; $('preview-scroll').hidden = !scrolling;
     $('preview-prev').textContent = scrolling ? '↑ 上へ' : '← 前'; $('preview-next').textContent = scrolling ? '下へ ↓' : '次 →';
     $('preview-prev').setAttribute('aria-label', scrolling ? '準備中の文章を上へ' : '準備中の前のページ');
     $('preview-next').setAttribute('aria-label', scrolling ? '準備中の文章を下へ' : '準備中の次のページ');
@@ -240,7 +243,7 @@ async function updatePreview() {
   updatePreviewNavigation();
 }
 function updatePreviewNavigation() {
-  const scrolling = state.style.readingMode === 'scroll';
+  const scrolling = !state.draft.groupId && state.style.readingMode === 'scroll';
   $('preview-prev').disabled = previewError || (scrolling ? previewScroll <= 0 || previewMetrics.scrollMax <= 0 : previewPage <= 0);
   $('preview-next').disabled = previewError || (scrolling ? previewScroll >= 1 || previewMetrics.scrollMax <= 0 : previewPage >= previewCount - 1);
   $('preview-scroll').disabled = previewError || previewMetrics.scrollMax <= 0;
@@ -267,7 +270,7 @@ function updateLive() {
   if (ready) liveMetrics = {scrollMax: metadata.scrollMax || 0, viewportHeight: metadata.viewportHeight || 1};
   const scrolling = live.style?.readingMode === 'scroll';
   $('live-detail').textContent = onAir ? (ready ? '表示前のプレビューとは、読む位置を別々に操作できます。' : '表示を更新しています…') : '下の「このお便りを配信に表示」から始められます。';
-  setInput('live-reading-mode', scrolling ? 'scroll' : 'pages'); $('live-reading-mode').disabled = !onAir;
+  setInput('live-reading-mode', scrolling ? 'scroll' : 'pages'); $('live-reading-mode').disabled = !onAir || !!live.groupCards;
   $('live-page').textContent = onAir ? (scrolling ? `${Math.round(live.scroll * 100)}%` : `${Math.min(live.page + 1, liveCount)} / ${liveCount}`) : '—';
   $('live-prev').textContent = scrolling ? '↑ 上へスクロール' : '← 前のページ'; $('live-next').textContent = scrolling ? '下へスクロール ↓' : '次のページ →';
   $('live-prev').setAttribute('aria-label', scrolling ? '表示中の文章を上へ' : '配信中の前のページ');
@@ -279,11 +282,11 @@ function updateLive() {
   $('hide-live').disabled = !onAir; $('finish-live').disabled = !onAir;
   const candidate = nextAiredCandidate();
   $('finish-next-live').disabled = !candidate || advancing || blocked;
-  $('next-label').textContent = onAir ? (candidate ? `次：${Core.label(candidate)}` : '次に表示するお便りはありません') : `準備中：${Core.label(state.draft)}`;
-  const key = JSON.stringify([live.text, live.style]);
+  $('next-label').textContent = onAir ? (candidate ? `次：${Core.label(candidate)}` : '次に表示するお便りはありません') : `準備中：${Core.label(Core.preparedValue(state))}`;
+  const key = JSON.stringify([live.text, live.style, live.groupCards, live.groupLayout]);
   if (onAir && key !== liveLayoutKey) {
     liveLayoutKey = key;
-    Core.renderLetter(document.createElement('div'), live, live.style || state.style, live.page, {prepared: true}).then(result => {
+    Core.renderPresentation(document.createElement('div'), live, live.style || state.style, live.page, {prepared: true}).then(result => {
       if (key !== liveLayoutKey) return;
       if (metadata.renderedLiveRevision !== metadata.liveRevision) { liveCount = result.pages.length; liveMetrics = result; }
       updateLive();
@@ -293,6 +296,7 @@ function updateLive() {
 function render() { if (state) { renderUI(); renderInputs(); renderQueue(); updateLive(); updatePreview(); } }
 
 async function loadSource(id) {
+  if ($('group-dialog').open) $('group-dialog').close();
   if ($('manager-edit-dialog').open) $('manager-edit-dialog').close();
   if ($('manager-dialog').open) $('manager-dialog').close();
   if ($('delete-dialog').open) $('delete-dialog').close();
@@ -311,7 +315,7 @@ async function refreshSources() {
   const result = await request('/api/sources'), sources = result.sources.sort((a, b) => a.name.localeCompare(b.name, 'ja'));
   const old = $('source-picker').value;
   $('source-picker').replaceChildren(...sources.map(source => { const option = document.createElement('option'); option.value = source.id; option.textContent = source.name; return option; }));
-  if (!sources.length) { if ($('manager-edit-dialog').open) $('manager-edit-dialog').close(); if ($('manager-dialog').open) $('manager-dialog').close(); if ($('delete-dialog').open) $('delete-dialog').close(); state = null; sourceId = ''; $('app').hidden = true; $('empty-setup').hidden = false; return; }
+  if (!sources.length) { if ($('group-dialog').open) $('group-dialog').close(); if ($('manager-edit-dialog').open) $('manager-edit-dialog').close(); if ($('manager-dialog').open) $('manager-dialog').close(); if ($('delete-dialog').open) $('delete-dialog').close(); state = null; sourceId = ''; $('app').hidden = true; $('empty-setup').hidden = false; return; }
   const id = sources.some(source => source.id === sourceId) ? sourceId : sources.some(source => source.id === old) ? old : sources[0].id;
   $('source-picker').value = id;
   if (!state || id !== sourceId) await loadSource(id);
@@ -364,7 +368,7 @@ async function show() {
   if (!state || !state.draft.text.trim()) return;
   try {
     const expected = generation;
-    const prepared = await Core.renderLetter(document.createElement('div'), state.draft, state.style);
+    const prepared = await Core.renderPresentation(document.createElement('div'), Core.preparedValue(state), state.style);
     if (expected !== generation) return show();
     if (!mutate(s => Core.showDraft(s, prepared.style))) return;
     await flush(); toast('このお便りを配信に表示します。');
@@ -382,7 +386,7 @@ function changeLivePage(delta) {
 }
 $('live-prev').addEventListener('click', () => changeLivePage(-1)); $('live-next').addEventListener('click', () => changeLivePage(1));
 $('live-reading-mode').addEventListener('change', () => {
-  if (!state?.live.visible) return;
+  if (!state?.live.visible || state.live.groupCards) return;
   const mode = $('live-reading-mode').value;
   if (mode === state.live.style?.readingMode) return;
   liveLayoutKey = ''; liveCount = 1; liveMetrics = {scrollMax: 0, viewportHeight: 1};
@@ -391,12 +395,12 @@ $('live-reading-mode').addEventListener('change', () => {
   toast(`${mode === 'scroll' ? 'スクロール' : 'ページ送り'}に切り替え、配信中のお便りを先頭から表示します。`);
 });
 for (const [id, delta] of [['preview-prev', -1], ['preview-next', 1]]) $(id).addEventListener('click', () => {
-  if (state.style.readingMode === 'scroll') movePreviewScroll(previewScroll + delta * (previewMetrics.scrollMax > 0 ? .85 * previewMetrics.viewportHeight / previewMetrics.scrollMax : 0));
+  if (!state.draft.groupId && state.style.readingMode === 'scroll') movePreviewScroll(previewScroll + delta * (previewMetrics.scrollMax > 0 ? .85 * previewMetrics.viewportHeight / previewMetrics.scrollMax : 0));
   else { previewPage = Math.max(0, Math.min(previewCount - 1, previewPage + delta)); updatePreview(); }
 });
 $('preview-scroll').addEventListener('input', () => movePreviewScroll(Number($('preview-scroll').value) / 1000));
 $('preview-viewport').addEventListener('wheel', event => {
-  if (!state || state.style.readingMode !== 'scroll' || previewMetrics.scrollMax <= 0) return;
+  if (!state || state.draft.groupId || state.style.readingMode !== 'scroll' || previewMetrics.scrollMax <= 0) return;
   event.preventDefault(); movePreviewScroll(previewScroll + event.deltaY / previewMetrics.scrollMax);
 }, {passive: false});
 $('live-scroll').addEventListener('input', () => { const position = Number($('live-scroll').value) / 1000; mutate(s => { s.live.scroll = position; }, false, false); });
@@ -410,7 +414,9 @@ function nextAiredCandidate() {
   if (!state?.live.visible) return null;
   const prepared = Core.clone(state);
   Core.finishLive(prepared);
-  return prepared.draft.text.trim() && prepared.draft.id !== state.live.id ? prepared.draft : null;
+  const value = Core.preparedValue(prepared);
+  const aired = new Set(state.live.groupCards?.map(c=>c.id) || [state.live.id]);
+  return value.text.trim() && Core.presentationId(value)!==Core.presentationId(state.live) && (value.groupCards ? value.groupCards.some(c=>!aired.has(c.id)) : !aired.has(value.id)) ? value : null;
 }
 async function finishAndShowNext() {
   if (!state?.live.visible || advancing || blocked) return;
@@ -420,7 +426,7 @@ async function finishAndShowNext() {
   advancing = true; $('finish-next-live').disabled = true;
   try {
     // Resolve pagination and dimensions before modifying the current broadcast.
-    const prepared = await Core.renderLetter(document.createElement('div'), candidate, state.style);
+    const prepared = await Core.renderPresentation(document.createElement('div'), candidate, state.style);
     if (generation !== expectedGeneration || sourceId !== expectedSource || blocked) {
       toast('操作中に準備内容が変更されました。内容を確認して再度操作してください。'); return;
     }
@@ -516,6 +522,7 @@ function updateManagerSelection() {
   $('manager-count').textContent = `${count}件選択`;
   $('manager-summary').textContent = `全 ${total} 件 / 未紹介 ${state.items.filter(item => !item.done).length} 件` + (ids.size !== total ? ` / 表示 ${ids.size} 件` : '');
   $('manager-all').disabled = !ids.size || count === ids.size;
+  $('manager-group-create').disabled = count < 2 || count > 4 || blocked || (state.groups || []).some(g=>g.members.some(m=>managerSelection.has(m.id)));
   $('manager-mark-done').disabled = !count || blocked;
   $('manager-mark-pending').disabled = !count || blocked;
   $('manager-delete').disabled = !count || blocked;
@@ -546,8 +553,8 @@ function renderManager() {
       const checkbox = document.createElement('input'); checkbox.type = 'checkbox';
       checkbox.setAttribute('aria-label', `${index+1}. ${Core.label(item)}を選択`);
       checkbox.addEventListener('change', () => { if (checkbox.checked) managerSelection.add(item.id); else managerSelection.delete(item.id); updateManagerSelection(); });
-      const handle = document.createElement('button'); handle.className = 'manager-handle'; handle.textContent = '⠿'; handle.draggable = true;
-      handle.setAttribute('aria-label', `${Core.label(item)}をドラッグして移動`);
+      const handle = document.createElement('span'); handle.className = 'manager-handle'; handle.textContent = '⠿'; handle.draggable = true;
+      handle.setAttribute('aria-label', `${Core.label(item)}をドラッグして移動`); handle.setAttribute('role','img');
       handle.addEventListener('dragstart', event => {
         if (blocked) { event.preventDefault(); return; }
         if (!managerSelection.has(item.id)) { managerSelection = new Set([item.id]); updateManagerSelection(); }
@@ -591,7 +598,7 @@ $('manager-open').addEventListener('click', () => {
   if (!state || blocked) return;
   managerSource = sourceId; managerSelection.clear(); managerKey = ''; managerDrag = null;
   $('manager-position').value = 1; $('manager-message').textContent = ''; $('manager-search').value = ''; $('manager-filter').value = 'all';
-  $('manager-dialog').showModal(); renderManager();
+  $('manager-dialog').showModal(); renderManager(); renderGroups();
 });
 for (const id of ['manager-close','manager-done']) $(id).addEventListener('click', () => $('manager-dialog').close());
 $('manager-dialog').addEventListener('close', () => { managerSelection.clear(); managerKey = ''; managerSource = ''; managerDrag = null; });
@@ -662,6 +669,77 @@ $('manager-edit-form').addEventListener('submit',event=>{
     } else s.items.push({id:Core.uid(),title,text,done:false,...(replyNote ? {replyNote} : {})});
   },true)) {
     $('manager-edit-dialog').close(); toast('一覧に保存しました。配信中の表示は変わりません。'); flush().catch(()=>{});
+  }
+});
+
+
+let groupEdit=null;
+const groupLabel=g=>(g.title || 'まとめたお便り')+'（'+g.members.length+'件）';
+function prepareGroup(id){
+  previewPage=0;previewScroll=0;
+  if(mutate(s=>Core.selectGroup(s,id))) toast('グループを準備しました。配信表示は変わりません。');
+}
+function renderGroups(){
+  if(!state)return;
+  const groups=state.groups || [], current=groups.find(g=>g.id===state.draft.groupId);
+  const q=$('queue-groups'); q.hidden=!groups.length;
+  q.replaceChildren(...groups.map(g=>{
+    const b=document.createElement('button');b.textContent='▦ '+groupLabel(g)+(g.members.every(m=>state.items.find(i=>i.id===m.id)?.done)?' ✓ 済':'');
+    b.classList.toggle('selected',g.id===state.draft.groupId);b.addEventListener('click',()=>prepareGroup(g.id));return b;
+  }));
+  const p=$('group-preparation');p.hidden=!current;p.replaceChildren();
+  if(current){
+    const label=document.createElement('strong');label.textContent=groupLabel(current);
+    const layout=document.createElement('select');layout.setAttribute('aria-label','グループの配置');
+    for(const [v,t] of [['grid','2列グリッド'],['vertical','縦並び'],['horizontal','横並び']]){const o=document.createElement('option');o.value=v;o.textContent=t;layout.append(o);}
+    layout.value=current.layout;layout.addEventListener('change',()=>{previewPage=0;mutate(s=>{s.groups.find(g=>g.id===current.id).layout=layout.value;},true);});
+    const single=document.createElement('button');single.textContent='個別表示に戻す';single.addEventListener('click',()=>{previewPage=0;mutate(s=>{delete s.draft.groupId;});});
+    const info=document.createElement('span');info.textContent='ページ送り・固定高さ／本文・返答メモは先頭のお便り';
+    p.append(label,layout,single,info);
+  }
+  const m=$('manager-groups');m.hidden=!groups.length;
+  if(!$('manager-dialog').open)return;
+  m.replaceChildren(...groups.map(g=>{
+    const row=document.createElement('div');row.className='manager-group-row';row.dataset.groupId=g.id;
+    const label=document.createElement('strong');label.textContent='▦ '+groupLabel(g)+' / '+g.members.map(m=>Core.label(state.items.find(i=>i.id===m.id))).join(' → ');
+    const button=(name,fn)=>{const b=document.createElement('button');b.textContent=name;b.addEventListener('click',fn);return b;};
+    row.append(label,button('配信の準備',()=>prepareGroup(g.id)),button('順番・配置',()=>openGroup(g.id)),button('グループ解除',()=>{if(confirm('グループを解除します。元のお便りは残ります。')){mutate(s=>{s.groups=s.groups.filter(x=>x.id!==g.id);if(s.draft.groupId===g.id)delete s.draft.groupId;},true);toast('グループを解除しました。');}}));return row;
+  }));
+}
+function openGroup(id=null){
+  if(!state||blocked)return;
+  const g=id?state.groups?.find(x=>x.id===id):null;
+  const members=g?g.members.map(m=>m.id):state.items.filter(i=>managerSelection.has(i.id)).map(i=>i.id);
+  if(members.length<2||members.length>4)return;
+  groupEdit={id,source:sourceId,members,original:g?JSON.stringify(g):null};
+  $('group-title').value=g?.title || '';$('group-layout').value=g?.layout || 'grid';$('group-error').textContent='';
+  $('group-dialog').showModal();renderGroupEditor();
+}
+function renderGroupEditor(){
+  if(!groupEdit||!state)return;
+  const members=groupEdit.members,layout=$('group-layout').value;
+  const preview=$('group-layout-preview');preview.style.gridTemplateColumns='repeat('+(layout==='horizontal'?members.length:layout==='vertical'?1:2)+',1fr)';
+  preview.replaceChildren(...members.map((_,i)=>{const e=document.createElement('span');e.textContent=i+1;return e;}));
+  $('group-members').replaceChildren(...members.map((id,i)=>{
+    const li=document.createElement('li'),label=document.createElement('span'),item=state.items.find(x=>x.id===id);
+    label.textContent=(i+1)+'. '+(item?Core.label(item):'削除済み');li.append(label);
+    for(const [name,delta] of [['↑',-1],['↓',1]]){const b=document.createElement('button');b.type='button';b.textContent=name;b.disabled=i+delta<0||i+delta>=members.length;b.addEventListener('click',()=>{[members[i],members[i+delta]]=[members[i+delta],members[i]];renderGroupEditor();});li.append(b);}
+    const remove=document.createElement('button');remove.type='button';remove.textContent='外す';remove.disabled=members.length<=2;remove.addEventListener('click',()=>{members.splice(i,1);renderGroupEditor();});li.append(remove);return li;
+  }));
+}
+$('manager-group-create').addEventListener('click',()=>openGroup());
+$('group-layout').addEventListener('change',renderGroupEditor);
+for(const id of ['group-close','group-cancel'])$(id).addEventListener('click',()=>$('group-dialog').close());
+$('group-dialog').addEventListener('close',()=>{groupEdit=null;});
+$('group-form').addEventListener('submit',event=>{
+  event.preventDefault();if(!groupEdit||blocked||groupEdit.source!==sourceId)return;
+  const {id,members,original}=groupEdit;
+  if(members.some(id=>!state.items.some(i=>i.id===id)) || (state.groups||[]).some(g=>g.id!==id&&g.members.some(m=>members.includes(m.id))) || (id && JSON.stringify(state.groups?.find(g=>g.id===id))!==original)){
+    $('group-error').textContent='一覧が変わりました。閉じて開き直してください。';return;
+  }
+  const g={id:id||Core.uid(),title:$('group-title').value,layout:$('group-layout').value,members:members.map(id=>({id}))};
+  if(mutate(s=>{s.groups=(s.groups||[]).filter(x=>x.id!==g.id);s.groups.push(g);if(s.draft.groupId===g.id)Core.selectGroup(s,g.id);},true)){
+    $('group-dialog').close();toast('グループを保存しました。');flush().catch(()=>{});
   }
 });
 
@@ -926,7 +1004,7 @@ $('restore-file').addEventListener('change', async () => {
   } catch (error) { toast(error.message); } finally { $('restore-file').value = ''; }
 });
 document.addEventListener('keydown', event => {
-  if ($('manager-edit-dialog').open || $('manager-dialog').open || $('bulk-dialog').open || $('ui-theme-dialog').open || $('delete-dialog').open || !state) return;
+  if ($('group-dialog').open || $('manager-edit-dialog').open || $('manager-dialog').open || $('bulk-dialog').open || $('ui-theme-dialog').open || $('delete-dialog').open || !state) return;
   if (event.altKey && event.key === 'Enter') { event.preventDefault(); show(); }
   else if (event.key === 'Escape' && state.live.visible) { event.preventDefault(); $('hide-live').click(); }
   else if (event.altKey && ['ArrowLeft', 'ArrowRight'].includes(event.key) && state.live.visible) { event.preventDefault(); changeLivePage(event.key === 'ArrowRight' ? 1 : -1); }
