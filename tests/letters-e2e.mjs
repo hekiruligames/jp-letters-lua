@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs/promises';
 import path from 'node:path';
 import {createRequire} from 'node:module';
-import {importText, normalizeState, newDraft, showDraft, moveItem, removeItem, selectItem} from '../letters/web/core.js';
+import {importText, normalizeState, newDraft, showDraft, moveItem, removeItem, selectItem, selectGroup, finishLive, groupColumns, stepScroll} from '../letters/web/core.js';
 import {UI_THEMES, contrast} from '../letters/web/themes.js';
 import {analysePaste} from '../letters/web/imports.js';
 const {chromium} = createRequire(import.meta.url)('playwright');
@@ -34,6 +34,23 @@ function pass(message) { passed.push(message); console.log(`PASS: ${message}`); 
 async function saved() { await until(async () => (await page.locator('#save-status').textContent()) === 'OBSに保存済み', 'changes did not persist'); }
 
 try {
+  // Check large group normalization before any browser interactions.
+  assert.equal(stepScroll(0,1,{scrollMax:1944,viewportHeight:960},'horizontal-scroll'),.5);
+  assert.equal(stepScroll(.5,1,{scrollMax:1944,viewportHeight:960},'horizontal-scroll'),1);
+  assert.equal(stepScroll(1,1,{scrollMax:1944,viewportHeight:960},'horizontal-scroll',true),0);
+  assert.equal(stepScroll(0,-1,{scrollMax:1944,viewportHeight:960},'horizontal-scroll',true),1);
+  assert.equal(stepScroll(0,1,{scrollMax:1080,viewportHeight:540},'vertical-scroll'),.45);
+  const manyItems=Array.from({length:18},(_,i)=>({id:'many-'+i,title:'回答 '+i,text:'本文 '+i,replyNote:'個別メモ '+i,done:false}));
+  const many=normalizeState({items:manyItems,groups:[{id:'many-group',members:manyItems.slice(0,16).map(i=>({id:i.id})),layout:'grid',replyNote:'共通メモ'},{id:'other-group',members:manyItems.slice(16).map(i=>({id:i.id})),layout:'grid'}]});
+  assert.equal(many.groups[0].members.length,16);assert.equal(groupColumns('grid',16),4);
+  assert.deepEqual(many.groups.map(g=>g.number),[1,2]);
+  selectGroup(many,'many-group');showDraft(many);
+  const manyRestored=normalizeState(JSON.parse(JSON.stringify(many)));
+  assert.equal(manyRestored.live.groupCards.length,16);
+  assert(!JSON.stringify(manyRestored.live).includes('メモ'));
+  assert.equal(manyRestored.groups[0].replyNote,'共通メモ');
+  finishLive(manyRestored);assert(manyRestored.items.slice(0,16).every(i=>i.done));assert.equal(manyRestored.draft.groupId,'other-group');
+  pass('16-member groups retain numbered membership and private notes across normalization; finish marks all members');
   const paragraphs = '一段落目。\n\n二段落目。';
   assert.deepEqual(importText(`${paragraphs}\n---\nもう一件。\n///\n三件目。`).map(item => item.text), [paragraphs, 'もう一件。', '三件目。']);
   const base = normalizeState({items: [{id: 'a', text: '表示中。'}, {id: 'b', text: '次のお便り。'}], draft: {id: 'a', text: '表示中。'}});
@@ -842,8 +859,14 @@ try {
   await page.locator('#manager-clear').click(); assert(await page.locator('#manager-first').isDisabled());
   await selectManager('b'); await selectManager('d');
   const dragSource = manager.locator('[data-id="manager-b"] .manager-handle'), dragTarget = manager.locator('[data-id="manager-e"]');
-  await dragTarget.scrollIntoViewIfNeeded();
-  await dragSource.hover(); await page.mouse.down(); await dragTarget.hover({position:{x:50,y:15}}); await dragTarget.hover({position:{x:51,y:16}}); await page.mouse.up();
+  // Keep both endpoints visible in the same modal scroll viewport during native drag.
+  await page.setViewportSize({width:1440,height:1200});
+  await page.locator('.manager-scroll').evaluate(el=>el.scrollTop=0);
+  await dragSource.scrollIntoViewIfNeeded(); await dragTarget.scrollIntoViewIfNeeded();
+  const from=await dragSource.boundingBox(), to=await dragTarget.boundingBox();
+  await page.mouse.move(from.x+from.width/2,from.y+from.height/2);await page.mouse.down();
+  await page.mouse.move(from.x+from.width/2+12,from.y+from.height/2+2,{steps:5});
+  await page.mouse.move(to.x+50,to.y+15,{steps:12});await page.mouse.move(to.x+51,to.y+16);await page.mouse.up();
   await saved(); assert.equal(await order(),'acbde');
   const managerAfter = (await get()).state;
   assert.deepEqual(managerAfter.live,managerState.live);
@@ -959,15 +982,25 @@ try {
   const grouped=(await get()).state;
   assert.deepEqual(grouped.items,groupFixtureState.items);
   assert.deepEqual(grouped.groups[0].members.map(m=>m.id),['group-b','group-a','group-c']);
+  assert.equal(grouped.groups[0].number,1);
+  assert.equal(await manager.locator('[data-id="group-b"] .group-member-badge').textContent(),'組1');
   await manager.locator('.manager-group-row').getByRole('button',{name:'配信の準備',exact:true}).click(); await saved();
   await page.locator('#manager-done').click();
   await until(async()=>await page.locator('#preview-host .letter-text').count()===3,'group preview not rendered');
   assert.deepEqual(await page.locator('#preview-host .letter-text').allTextContents(),['学生の回答 b','学生の回答 a','学生の回答 c']);
+  assert.deepEqual(await page.locator('.group-reader-body').allTextContents(),['学生の回答 b','学生の回答 a','学生の回答 c']);
+  assert.equal(await page.locator('#group-member-reply-2').inputValue(),'非公開 c');
+  await page.locator('#group-common-reply').fill('共通の答え');await page.locator('#group-member-reply-2').fill('3番目への返答');await saved();
+  assert.equal((await get()).state.groups[0].replyNote,'共通の答え');
+  assert.equal((await get()).state.items.find(i=>i.id==='group-c').replyNote,'3番目への返答');
+  assert(await page.locator('#single-editor').isHidden());
   await page.locator('#show-letter').click(); await saved();
   await until(async()=>await display.locator('.letter-group-frame .letter-text').count()===3,'group not rendered on OBS');
   const groupLive=(await get()).state.live;
   assert.equal(groupLive.groupCards.length,3);
   assert(!JSON.stringify(groupLive).includes('非公開'));
+  assert(!JSON.stringify(groupLive).includes('共通の答え'));
+  assert(!JSON.stringify(groupLive).includes('3番目への返答'));
   await page.locator('#group-preparation select').selectOption('horizontal');await saved();
   assert.deepEqual((await get()).state.live,groupLive);
   await page.locator('#group-preparation select').selectOption('grid');await saved();
@@ -984,6 +1017,53 @@ try {
   assert.equal((await get()).state.items.length,4);
   await page.locator('#manager-done').click();
   pass('group creation and reordering preserve originals; multiple cards preview and air together; editing layout preserves live; finish marks all and ungroup retains originals');
+  const largeBefore=await get();
+  const largeState=normalizeState({...largeBefore.state,items:manyItems,groups:many.groups,selectedId:'many-0',draft:{id:'many-0',title:'回答 0',text:'本文 0',groupId:'many-group'},style:{...largeBefore.state.style,width:960,height:540,fontSize:24},live:{visible:false}});
+  const largeResponse=await fetch(`${origin}/api/state/${connection.sourceId}`,{method:'POST',headers:{...auth,'Content-Type':'application/json'},body:JSON.stringify({expectedRevision:largeBefore.revision,state:largeState})});
+  assert.equal(largeResponse.status,200);
+  await until(async()=>await page.locator('#preview-host .letter-text').count()===16,'16-card preview not rendered',20000);
+  assert.equal(await page.locator('.group-reader-body').count(),16);
+  await page.locator('#show-letter').click();await saved();
+  await until(async()=>await display.locator('.letter-group-frame .letter-text').count()===16,'16-card OBS preview not rendered',20000);
+  await display.screenshot({path:path.join(artifacts,'group-16-output.png'),omitBackground:true});
+  await page.screenshot({path:path.join(artifacts,'group-16-reader.png'),fullPage:true});
+  pass('sixteen cards fit in a fixed-size group canvas and all original texts are available to the operator');
+
+  // The viewport size stays fixed while the whole card strip moves independently.
+  for(const [layout,axis] of [['vertical-scroll','y'],['horizontal-scroll','x']]){
+    const previousLive=(await get()).state.live;
+    await page.locator('#group-preparation select').selectOption(layout); await saved();
+    const previewStrip=page.locator('#preview-host .letter-group-strip');
+    await until(async()=>await previewStrip.count()===1 && await previewStrip.getAttribute('data-scroll-axis')===axis,'group strip preview not ready',20000);
+    assert(Number(await previewStrip.getAttribute('data-scroll-max'))>0);
+    assert.equal(await previewStrip.locator('.letter-group-track > .letter-frame').count(),16);
+    assert.deepEqual((await get()).state.live,previousLive);
+    await page.locator('#preview-next').click();
+    assert.notEqual(await page.locator('#preview-scroll').inputValue(),'0');
+    assert.deepEqual((await get()).state.live,previousLive);
+    await page.locator('#show-letter').click();await saved();
+    const liveStrip=display.locator('.letter-group-strip');
+    await until(async()=>await liveStrip.count()===1 && await liveStrip.getAttribute('data-scroll-axis')===axis && (await get()).renderedLiveRevision===(await get()).liveRevision,'live group strip not ready',20000);
+    assert.equal((await get()).state.live.style.readingMode,'scroll');
+    assert.equal((await get()).state.live.scroll,0);
+    const frameBox=await liveStrip.boundingBox();
+    assert.equal(frameBox.width,960);assert.equal(frameBox.height,540);
+    await page.locator('#live-next').click();await saved();
+    assert((await get()).state.live.scroll>0);
+    await page.locator('#live-scroll').evaluate(el=>{el.value='1000';el.dispatchEvent(new Event('input',{bubbles:true}));});
+    await saved();await until(async()=>(await get()).state.live.scroll===1,'live group scroll did not reach end');
+    await until(async()=>await liveStrip.locator('.letter-group-track').evaluate(el=>{const frame=el.parentElement.getBoundingClientRect(),last=el.lastElementChild.getBoundingClientRect();return el.parentElement.dataset.scrollAxis==='x'?Math.abs(last.right-frame.right)<2:Math.abs(last.bottom-frame.bottom)<2;}),'final card not fully reached');
+    await display.screenshot({path:path.join(artifacts,'group-'+layout+'-end.png'),omitBackground:true});
+    assert(await page.locator('#live-next').isDisabled());
+    await page.locator('#live-loop').check();
+    await page.locator('#live-next').click();await saved();
+    assert.equal((await get()).state.live.scroll,0);
+    await page.locator('#live-prev').click();await saved();
+    assert.equal((await get()).state.live.scroll,1);
+    await page.locator('#live-loop').uncheck();
+    assert(await page.locator('#live-next').isDisabled());
+  }
+  pass('vertical and horizontal group strips retain card dimensions and reach the final card; preview and live scroll independently');
 
   assert.deepEqual(browserErrors, []);
   pass('desktop and narrow layouts stay usable without horizontal overflow or browser errors');

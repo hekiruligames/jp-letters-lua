@@ -386,3 +386,28 @@ button.advance-primary:disabled {background:var(--panel); color:var(--muted); bo
 .group-layout-preview {display:grid;gap:4px;min-height:64px;max-width:240px;margin:auto;width:100%;}
 .group-layout-preview span {display:grid;place-items:center;border-radius:4px;min-height:24px;background:var(--soft);border:1px solid var(--accent);font-size:12px;}
 .letter-group-frame > div {min-width:0;min-height:0;}
+
+.group-reader {padding:12px 16px;border-top:1px solid var(--line);background:var(--panel);}
+.group-reader-heading {display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-bottom:10px;}
+.group-reader-heading strong {font-size:14px;}
+.group-reader-heading span {color:var(--muted);font-size:11px;}
+.group-reader label {display:block;font-size:12px;font-weight:600;margin:6px 0;}
+.group-reader textarea {display:block;width:100%;min-height:66px;resize:vertical;font-size:14px;}
+.group-reader-common {background:var(--soft);padding:10px;border-radius:8px;margin-bottom:10px;}
+.group-reader-list {display:grid;gap:10px;}
+.group-reader-card {border:1px solid var(--line);border-radius:8px;padding:10px;min-width:0;}
+.group-reader-card header {display:flex;align-items:center;gap:6px;flex-wrap:wrap;}
+.group-reader-card header strong {flex:1;overflow-wrap:anywhere;font-size:13px;}
+.group-reader-card header button {font-size:11px;padding:4px 8px;}
+.group-reader-body {white-space:pre-wrap;overflow-wrap:anywhere;font-size:16px;line-height:1.65;margin:8px 0 12px;color:var(--ink);}
+.group-member-badge {display:inline-block;white-space:nowrap;color:#14643f;background:#e4f4eb;border:1px solid #a6d9bc;border-radius:4px;padding:2px 5px;font-size:11px;font-weight:700;}
+.manager-number .group-member-badge {display:table;margin-top:4px;padding:1px 3px;}
+.group-reader textarea.group-member-reply {height:76px;}
+@media(max-width:680px){.group-reader {padding:10px;}.group-reader-body{font-size:15px;}}
+
+#group-layout-preview[data-layout="vertical-scroll"] {max-height:130px;overflow-y:auto;scrollbar-width:thin;}
+#group-layout-preview[data-layout="horizontal-scroll"] {grid-auto-flow:column;grid-template-columns:none!important;grid-auto-columns:70px;overflow-x:auto;scrollbar-width:thin;min-height:46px;}
+.letter-group-track > .letter-frame {flex:0 0 auto;}
+
+.group-loop-row {display:flex;align-items:center;gap:5px;font-size:12px;line-height:1.4;}
+.group-loop-row input {width:auto;min-height:0;flex:none;}

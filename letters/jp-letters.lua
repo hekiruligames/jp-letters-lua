@@ -1,5 +1,5 @@
 -- SPDX-License-Identifier: GPL-2.0-or-later
--- Japanese letters / Marshmallow-reading source, version 0.5.2-preview.7.
+-- Japanese letters / Marshmallow-reading source, version 0.5.2-preview.9.
 local obs = obslua
 local bit = require("bit")
 local ROOT = script_path()
@@ -247,8 +247,20 @@ local function shortcut(record, action)
     else
         local style = obs.obs_data_get_obj(live, "style")
         if style and obs.obs_data_get_string(style, "readingMode") == "scroll" then
-            local step = record.scroll_max and record.scroll_max > 0 and 0.85 * record.viewport_height / record.scroll_max or 0
-            local position = obs.obs_data_get_double(live, "scroll") + (action == "next" and step or -step)
+            local maximum, extent = record.scroll_max or 0, record.viewport_height or 0
+            local layout = obs.obs_data_get_string(live, "groupLayout")
+            local direction = action == "next" and 1 or -1
+            local position = obs.obs_data_get_double(live, "scroll")
+            if maximum > 0 and extent > 0 then
+                if layout == "horizontal-scroll" then
+                    local stride = extent + 12
+                    local at = position * maximum / stride
+                    local target = direction > 0 and math.floor(at + 0.000001) + 1 or math.ceil(at - 0.000001) - 1
+                    position = target * stride / maximum
+                else
+                    position = position + direction * (layout == "vertical-scroll" and 0.9 or 0.85) * extent / maximum
+                end
+            end
             obs.obs_data_set_double(live, "scroll", math.max(0, math.min(1, position)))
         else
             local page = obs.obs_data_get_int(live, "page")
@@ -394,7 +406,7 @@ source.destroy = function(record)
 end
 
 function script_description()
-    return "<h3>日本語お便りテキスト 0.5.2-preview.7（UI試用版）</h3>マシュマロ読み配信などのお便りを、準備・表示・ページ切り替え・スクロールまで扱うソースです。<br><br>ソース追加から「日本語お便りテキスト（マシュマロ向け）」を選び、プロパティの「お便りの操作画面を開く」を押してください。<br><br>コピーした受信箱の確認・一括登録とテキスト／JSONファイルの取り込みに対応します。受信箱の自動取得機能は含みません。"
+    return "<h3>日本語お便りテキスト 0.5.2-preview.9（UI試用版）</h3>マシュマロ読み配信などのお便りを、準備・表示・ページ切り替え・スクロールまで扱うソースです。<br><br>ソース追加から「日本語お便りテキスト（マシュマロ向け）」を選び、プロパティの「お便りの操作画面を開く」を押してください。<br><br>コピーした受信箱の確認・一括登録とテキスト／JSONファイルの取り込みに対応します。受信箱の自動取得機能は含みません。"
 end
 function script_load() ensure_server() end
 function script_properties()

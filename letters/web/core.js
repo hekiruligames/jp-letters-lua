@@ -2,6 +2,10 @@
 // Shared state operations and layout for both the operator preview and OBS.
 import {normalizeUI} from './themes.js';
 export const MAX_ICON_DATA_URL = 180000;
+export const MAX_GROUP_MEMBERS = 16;
+export const isGroupScroll = layout => layout==='vertical-scroll'||layout==='horizontal-scroll';
+export const groupColumns = (layout,count) => layout==='horizontal'||layout==='horizontal-scroll'?count:layout==='vertical'||layout==='vertical-scroll'?1:Math.ceil(Math.sqrt(count));
+const groupLayouts = ['vertical','horizontal','grid','vertical-scroll','horizontal-scroll'];
 export const DEFAULT_STYLE = Object.freeze({
   width: 960, height: 540, font: 'Yu Gothic', fontSize: 32, lineHeight: 1.5,
   padding: { top: 16, right: 16, bottom: 16, left: 16 }, innerPadding: 24,
@@ -70,13 +74,21 @@ export function normalizeState(input = {}) {
     items.push({ id, title: text(item.title).slice(0, 100), text: content, done: !!item.done, ...(replyNote ? {replyNote} : {}) });
   }
   if (items.length > 300) throw new Error('お便りは300件まで登録できます。');
-  const groups = [], grouped = new Set(), groupIds = new Set();
-  for (const raw of Array.isArray(input.groups) ? input.groups : []) {
+  const groups = [], grouped = new Set(), groupIds = new Set(), groupNumbers = new Set();
+  const rawGroups = Array.isArray(input.groups) ? input.groups : [];
+  const reservedNumbers = new Set(rawGroups.map(g=>g?.number).filter(n=>Number.isInteger(n)&&n>0&&n<=999999));
+  for (const raw of rawGroups) {
     if (!raw || typeof raw.id !== 'string' || !/^[A-Za-z0-9_-]{1,120}$/.test(raw.id) || groupIds.has(raw.id)) continue;
-    const members = [...new Set(Array.isArray(raw.members) ? raw.members.map(m=>m?.id) : [])].filter(id => ids.has(id) && !grouped.has(id)).slice(0,4);
+    const members = [...new Set(Array.isArray(raw.members) ? raw.members.map(m=>m?.id) : [])].filter(id => ids.has(id) && !grouped.has(id)).slice(0,MAX_GROUP_MEMBERS);
     if (members.length < 2) continue;
     groupIds.add(raw.id); members.forEach(id => grouped.add(id));
-    groups.push({id:raw.id,title:text(raw.title).slice(0,100),members:members.map(id=>({id})),layout:['vertical','horizontal','grid'].includes(raw.layout) ? raw.layout : 'grid'});
+    let number=raw.number;
+    if(!Number.isInteger(number)||number<1||number>999999||groupNumbers.has(number)){
+      number=1;while(groupNumbers.has(number)||reservedNumbers.has(number))number++;
+    }
+    groupNumbers.add(number);
+    const replyNote=text(raw.replyNote).slice(0,4000);
+    groups.push({id:raw.id,number,title:text(raw.title).slice(0,100),members:members.map(id=>({id})),layout:groupLayouts.includes(raw.layout) ? raw.layout : 'grid',...(replyNote?{replyNote}:{})});
   }
   const style = normalizeStyle(input.style), rawDraft = input.draft || {}, rawLive = input.live || {};
   if (text(rawDraft.text).length > 12000 || text(rawLive.text).length > 12000) {
@@ -91,12 +103,13 @@ export function normalizeState(input = {}) {
   if (groups.length) result.groups = groups;
   const group = groups.find(g=>g.id===rawDraft.groupId && g.members.some(m=>m.id===result.draft.id));
   if (group) result.draft.groupId = group.id;
-  const cards = Array.isArray(rawLive.groupCards) ? rawLive.groupCards.slice(0,4).filter(c=>c && typeof c.id==='string' && text(c.text).trim() && text(c.text).length<=12000).map(c=>({id:c.id,title:text(c.title).slice(0,100),text:text(c.text)})) : [];
+  const cards = Array.isArray(rawLive.groupCards) ? rawLive.groupCards.slice(0,MAX_GROUP_MEMBERS).filter(c=>c && typeof c.id==='string' && text(c.text).trim() && text(c.text).length<=12000).map(c=>({id:c.id,title:text(c.title).slice(0,100),text:text(c.text)})) : [];
   if (cards.length>=2 && typeof rawLive.groupId==='string') {
     result.live.groupId=rawLive.groupId; result.live.groupCards=cards;
     result.live.groupTitle=text(rawLive.groupTitle).slice(0,100);
-    result.live.groupLayout=['vertical','horizontal','grid'].includes(rawLive.groupLayout)?rawLive.groupLayout:'grid';
-    if (result.live.style) {result.live.style.readingMode='pages';result.live.style.autoHeight=false;}
+    if(Number.isInteger(rawLive.groupNumber)&&rawLive.groupNumber>0)result.live.groupNumber=rawLive.groupNumber;
+    result.live.groupLayout=groupLayouts.includes(rawLive.groupLayout)?rawLive.groupLayout:'grid';
+    if (result.live.style) {result.live.style.readingMode=isGroupScroll(result.live.groupLayout)?'scroll':'pages';result.live.style.autoHeight=false;}
   }
   if (new TextEncoder().encode(JSON.stringify(result)).length > 800000) {
     throw new Error('一覧のデータが大きくなっています。バックアップを書き出し、お便りを配信ごとに分けてください。');
@@ -142,7 +155,7 @@ export function preparedValue(state) {
   const groupCards=group.members.map(m=>state.items.find(i=>i.id===m.id)).filter(Boolean)
     .map(i=>({id:i.id,title:i.id===state.draft.id?state.draft.title:i.title,text:i.id===state.draft.id?state.draft.text:i.text}));
   if(groupCards.length<2)return state.draft;
-  return {...state.draft,groupId:group.id,groupTitle:group.title,groupLayout:group.layout,groupCards};
+  return {...state.draft,groupId:group.id,groupNumber:group.number,groupTitle:group.title,groupLayout:group.layout,groupCards};
 }
 export const presentationId = value => value.groupId ? 'group:'+value.groupId : value.id;
 export function showDraft(state, liveStyle = state.style) {
@@ -151,7 +164,7 @@ export function showDraft(state, liveStyle = state.style) {
   state.live = {visible: true, id: state.draft.id, text: state.draft.text, title: state.draft.title,
     page: 0, scroll: 0, style: clone(liveStyle)};
   const prepared = preparedValue(state);
-  if (prepared.groupCards) Object.assign(state.live,{groupId:prepared.groupId,groupTitle:prepared.groupTitle,groupLayout:prepared.groupLayout,groupCards:clone(prepared.groupCards)});
+  if (prepared.groupCards) Object.assign(state.live,{groupId:prepared.groupId,groupNumber:prepared.groupNumber,groupTitle:prepared.groupTitle,groupLayout:prepared.groupLayout,groupCards:clone(prepared.groupCards)});
   return state;
 }
 export function finishLive(state) {
@@ -210,7 +223,7 @@ export function removeItems(state, ids) {
   // The aired text is an independent snapshot; deleting a queue item doesn't replace it.
   return state;
 }
-export const label = item => (item.groupId && item.groupCards ? (item.groupTitle || 'まとめたお便り') + '（'+item.groupCards.length+'件）' : '') || item.title || item.text.replace(/\s+/g, ' ').slice(0, 28) || '新しいお便り';
+export const label = item => (item.groupId && item.groupCards ? (item.groupNumber ? '組'+item.groupNumber+' ' : '') + (item.groupTitle || 'まとめたお便り') + '（'+item.groupCards.length+'件）' : '') || item.title || item.text.replace(/\s+/g, ' ').slice(0, 28) || '新しいお便り';
 
 export function applyDisplayPreset(style, name) {
   if (name === 'clear') {
@@ -466,9 +479,35 @@ export async function renderLetter(host, value, rawStyle, page = 0, options = {}
   return {pages, page: index, frame, style, scrollMax, viewportHeight: g.height};
 }
 
+// Button movement is separate from the continuous range slider.
+export function stepScroll(position,delta,metrics,layout,loop=false) {
+  const maximum=Number(metrics.scrollMax)||0, extent=Number(metrics.viewportHeight)||0;
+  if(maximum<=0||extent<=0)return 0;
+  const pos=bounded(position,0,0,1), epsilon=1e-6;
+  if(loop&&isGroupScroll(layout)){
+    if(delta>0&&pos>=1-epsilon)return 0;
+    if(delta<0&&pos<=epsilon)return 1;
+  }
+  if(layout==='horizontal-scroll'){
+    // Each horizontal card/page fills the source width, with a 12px gap.
+    const stride=extent+12, at=pos*maximum/stride;
+    const target=delta>0?Math.floor(at+epsilon)+1:Math.ceil(at-epsilon)-1;
+    return bounded(target*stride/maximum,0,0,1);
+  }
+  return bounded(pos+delta*(isGroupScroll(layout)?.9:.85)*extent/maximum,0,0,1);
+}
 export function setScroll(frame, position, smooth = true) {
-  const body = frame.querySelector('.letter-text'), maximum = Number(frame.dataset.scrollMax) || 0;
+  if(!frame)return;
+  const maximum = Number(frame.dataset.scrollMax) || 0;
   const fraction = bounded(position, 0, 0, 1);
+  const track=frame.querySelector('.letter-group-track');
+  if(track){
+    track.style.transition=smooth && !matchMedia('(prefers-reduced-motion: reduce)').matches ? 'transform 280ms cubic-bezier(.22,.61,.36,1)' : 'none';
+    track.style.transform='translate'+(frame.dataset.scrollAxis==='x'?'X':'Y')+'('+(-maximum*fraction)+'px)';
+    return;
+  }
+  const body = frame.querySelector('.letter-text');
+  if(!body)return;
   body.style.transition = smooth && !matchMedia('(prefers-reduced-motion: reduce)').matches ? 'transform 180ms ease-out' : 'none';
   body.style.transform = `translateY(${-maximum * fraction}px)`;
   const footer = frame.querySelector('.letter-footer');
@@ -480,22 +519,65 @@ export async function renderPresentation(host, value, rawStyle, page=0, options=
   const cards=value.groupCards;
   if (!cards || cards.length<2) return renderLetter(host,value,rawStyle,page,options);
   if(cards.some(card=>!card.text.trim()))throw new Error('グループ内の本文が空です。');
+  if(isGroupScroll(value.groupLayout))return renderGroupStrip(host,value,rawStyle,options);
   const style=normalizeStyle({...rawStyle,autoHeight:false,readingMode:'pages'});
-  const layout=value.groupLayout, columns=layout==='horizontal'?cards.length:layout==='vertical'?1:2;
-  const rows=Math.ceil(cards.length/columns), gap=12;
+  const layout=value.groupLayout, columns=groupColumns(layout,cards.length);
+  const rows=Math.ceil(cards.length/columns), gap=Math.min(12,Math.max(2,Math.floor(Math.min(style.width/columns,style.height/rows)*.04)));
   const width=Math.floor((style.width-gap*(columns-1))/columns),height=Math.floor((style.height-gap*(rows-1))/rows);
-  if(width<320 || height<180)throw new Error('カードの領域が足りません。枠の幅・高さを広げるか、配置を変更してください。');
-  const childStyle=normalizeStyle({...style,width,height,frameBackgroundOpacity:0,showIcon:false,
+  // Render at a safe logical size, then uniformly fit the card into its cell.
+  // This allows crowd/overview shots without clipping the text or changing the source size.
+  const logicalScale=Math.max(1,320/width,180/height);
+  const logicalWidth=Math.min(3840,Math.ceil(width*logicalScale)), logicalHeight=Math.min(2160,Math.ceil(height*logicalScale));
+  const fit=Math.min(width/logicalWidth,height/logicalHeight,1);
+  const childStyle=normalizeStyle({...style,width:logicalWidth,height:logicalHeight,frameBackgroundOpacity:0,showIcon:false,
     padding:{top:8,right:8,bottom:8,left:8},innerPadding:Math.min(style.innerPadding,16)});
   const frame=document.createElement('div');frame.className='letter-frame letter-group-frame';
   Object.assign(frame.style,{width:style.width+'px',height:style.height+'px',background:rgba(style.frameBackground,style.frameBackgroundOpacity),
     display:'grid',gridTemplateColumns:'repeat('+columns+','+width+'px)',gridTemplateRows:'repeat('+rows+','+height+'px)',gap:gap+'px'});
   let count=1;
   for (const card of cards) {
-    const cell=document.createElement('div');
+    const cell=document.createElement('div');cell.className='letter-group-cell';
+    Object.assign(cell.style,{width:width+'px',height:height+'px',position:'relative',overflow:'hidden'});
     const result=await renderLetter(cell,card,childStyle,page,{...options,prepared:true});
+    Object.assign(result.frame.style,{position:'absolute',left:((width-logicalWidth*fit)/2)+'px',top:((height-logicalHeight*fit)/2)+'px',transformOrigin:'top left',transform:'scale('+fit+')'});
     count=Math.max(count,result.pages.length);frame.append(cell);
   }
   host.replaceChildren(frame);
   return {frame,style,pages:Array(count).fill(''),page:Math.max(0,Math.min(count-1,page)),scrollMax:0,viewportHeight:height};
+}
+
+ 
+// A strip keeps the normal card width/font and uses the OBS source as a viewport.
+// Long letters retain every page in sequence instead of overflowing or truncating.
+async function renderGroupStrip(host,value,rawStyle,options={}) {
+  const style=normalizeStyle({...rawStyle,autoHeight:false,readingMode:'scroll'});
+  const horizontal=value.groupLayout==='horizontal-scroll', gap=12;
+  const frame=document.createElement('div');frame.className='letter-frame letter-group-frame letter-group-strip';
+  Object.assign(frame.style,{width:style.width+'px',height:style.height+'px',overflow:'hidden',background:rgba(style.frameBackground,style.frameBackgroundOpacity)});
+  const track=document.createElement('div');track.className='letter-group-track';
+  Object.assign(track.style,{position:'absolute',left:'0',top:'0',display:'flex',flexDirection:horizontal?'row':'column',alignItems:'flex-start',gap:gap+'px',transformOrigin:'top left'});
+  let length=0, pages=0;
+  for(const card of value.groupCards){
+    if(options.signal?.aborted)throw new DOMException('preview superseded','AbortError');
+    // On a vertical strip, short letters use their natural height, up to the viewport.
+    const childStyle=await prepareStyle(card.text,{...style,readingMode:'pages',autoHeight:!horizontal,frameBackgroundOpacity:0});
+    childStyle.autoHeight=false;
+    const scratch=document.createElement('div');
+    let result=await renderLetter(scratch,card,childStyle,0,{...options,prepared:true});
+    const count=result.pages.length;
+    for(let i=0;i<count;i++){
+      if(options.signal?.aborted)throw new DOMException('preview superseded','AbortError');
+      if(i>0)result=await renderLetter(scratch,card,childStyle,i,{...options,prepared:true});
+      result.frame.dataset.groupMember=card.id;
+      result.frame.dataset.groupMemberPage=String(i+1);
+      if(horizontal)result.frame.style.marginTop=Math.max(0,(style.height-childStyle.height)/2)+'px';
+      track.append(result.frame);length+=(horizontal?childStyle.width:childStyle.height)+gap;pages++;
+    }
+  }
+  length=Math.max(0,length-gap);
+  const extent=horizontal?style.width:style.height, scrollMax=Math.max(0,length-extent);
+  frame.dataset.scrollMax=String(scrollMax);frame.dataset.scrollAxis=horizontal?'x':'y';
+  frame.append(track);host.replaceChildren(frame);
+  setScroll(frame,value.scroll||0,false);
+  return {frame,style,pages:[''],page:0,scrollMax,viewportHeight:extent,stripPages:pages};
 }

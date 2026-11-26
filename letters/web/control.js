@@ -130,7 +130,7 @@ function renderInputs() {
   setInput('frameBackgroundOpacity', Math.round(state.style.frameBackgroundOpacity * 100));
   $('frame-opacity-value').textContent = `${Math.round(state.style.frameBackgroundOpacity * 100)}%`;
   $('frameBackgroundOpacity').style.setProperty('--range-progress', `${state.style.frameBackgroundOpacity * 100}%`);
-  setInput('readingMode', state.draft.groupId ? 'pages' : state.style.readingMode); $('readingMode').disabled=!!state.draft.groupId; renderFonts();
+  setInput('readingMode', previewScrolling() ? 'scroll' : 'pages'); $('readingMode').disabled=!!state.draft.groupId; renderFonts();
   $('auto-height').setAttribute('aria-pressed', String(state.style.autoHeight));
   $('height-label').textContent = state.style.autoHeight ? '最大の高さ' : '枠の高さ';
   setInput('quick-width', state.style.width); setInput('quick-height', state.style.height);
@@ -177,7 +177,7 @@ function renderQueue() {
     const index = document.createElement('span'); index.className = 'item-index'; index.textContent = String(state.items.indexOf(item) + 1).padStart(2, '0');
     const title = document.createElement('strong'); title.textContent = Core.label(item); heading.append(index, title);
     const grouped = state.groups?.find(g=>g.members.some(m=>m.id===item.id));
-    if(grouped){const badge=document.createElement('span');badge.className='item-done';badge.textContent='組';heading.append(badge);}
+    if(grouped){const badge=document.createElement('span');badge.className='group-member-badge';badge.textContent='組'+grouped.number;badge.title=groupLabel(grouped);heading.append(badge);}
     if (item.done) { const badge = document.createElement('span'); badge.className = 'item-done'; badge.textContent = '✓ 済'; heading.append(badge); }
     const snippet = document.createElement('span'); snippet.className = 'item-snippet'; snippet.textContent = item.text;
     button.append(heading, snippet); button.addEventListener('click', () => { previewPage = 0; previewScroll = 0; mutate(s => Core.selectItem(s, item.id)); });
@@ -209,7 +209,7 @@ async function updatePreview() {
   $('preview-empty').hidden = !!draft.text.trim();
   if (!draft.text.trim()) {
     $('preview-host').replaceChildren(); previewCount = 1; previewError = '';
-    previewStyle = null; previewMetrics = {scrollMax: 0, viewportHeight: 1}; $('preview-scroll').hidden = true;
+    previewStyle = null; previewMetrics = {scrollMax: 0, viewportHeight: 1}; $('preview-scroll').hidden = true; $('preview-loop-row').hidden=true;
     $('preview-page').textContent = '—'; $('preview-prev').disabled = true; $('preview-next').disabled = true;
     $('show-letter').disabled = true;
     $('preview-info').textContent = '長文は読みやすい文字サイズのままページに分けます。'; $('preview-info').classList.remove('error');
@@ -225,13 +225,13 @@ async function updatePreview() {
     previewError = '';
     previewMetrics = result; previewStyle = result.style; scalePreview();
     $('preview-size').textContent = `${result.style.width} × ${result.style.height}${style.autoHeight ? '（自動）' : ''}`;
-    const scrolling = result.style.readingMode === 'scroll'; $('preview-scroll').hidden = !scrolling;
-    $('preview-prev').textContent = scrolling ? '↑ 上へ' : '← 前'; $('preview-next').textContent = scrolling ? '下へ ↓' : '次 →';
-    $('preview-prev').setAttribute('aria-label', scrolling ? '準備中の文章を上へ' : '準備中の前のページ');
-    $('preview-next').setAttribute('aria-label', scrolling ? '準備中の文章を下へ' : '準備中の次のページ');
+    const scrolling = result.style.readingMode === 'scroll', horizontal = draft.groupLayout === 'horizontal-scroll'; $('preview-scroll').hidden = !scrolling;
+    $('preview-prev').textContent = scrolling ? (horizontal?'← 左へ':'↑ 上へ') : '← 前'; $('preview-next').textContent = scrolling ? (horizontal?'右へ →':'下へ ↓') : '次 →';
+    $('preview-prev').setAttribute('aria-label', scrolling ? (horizontal?'準備中のカードを左へ':'準備中の文章を上へ') : '準備中の前のページ');
+    $('preview-next').setAttribute('aria-label', scrolling ? (horizontal?'準備中のカードを右へ':'準備中の文章を下へ') : '準備中の次のページ');
     $('preview-page').textContent = scrolling ? `${Math.round(previewScroll * 100)}%` : `${previewPage + 1} / ${previewCount}`;
     setInput('preview-scroll', Math.round(previewScroll * 1000));
-    $('preview-info').textContent = scrolling ? (result.scrollMax > 0 ? '全文を上下にスクロールできます。' : '全文がこの枠に収まります。') :
+    $('preview-info').textContent = scrolling ? (result.scrollMax > 0 ? (horizontal?'カードを左右にスクロールできます。':draft.groupCards?'カードを上下にスクロールできます。':'全文を上下にスクロールできます。') : '全文がこの枠に収まります。') :
       previewCount > 1 ? `全${previewCount}ページ。ここでは表示前の内容を確認できます。` : 'この内容は1ページに収まります。';
     $('preview-info').classList.remove('error'); $('show-letter').disabled = false;
   } catch (error) {
@@ -242,10 +242,13 @@ async function updatePreview() {
   }
   updatePreviewNavigation();
 }
+function preparedGroupLayout(){return state?.groups?.find(g=>g.id===state.draft.groupId)?.layout;}
+function previewScrolling(){return state?.draft.groupId ? Core.isGroupScroll(preparedGroupLayout()) : state?.style.readingMode==='scroll';}
 function updatePreviewNavigation() {
-  const scrolling = !state.draft.groupId && state.style.readingMode === 'scroll';
-  $('preview-prev').disabled = previewError || (scrolling ? previewScroll <= 0 || previewMetrics.scrollMax <= 0 : previewPage <= 0);
-  $('preview-next').disabled = previewError || (scrolling ? previewScroll >= 1 || previewMetrics.scrollMax <= 0 : previewPage >= previewCount - 1);
+  const scrolling = previewScrolling(), groupScroll=Core.isGroupScroll(preparedGroupLayout()), loop=groupScroll&&$('preview-loop').checked;
+  $('preview-loop-row').hidden=!groupScroll;
+  $('preview-prev').disabled = !!previewError || (scrolling ? (!loop && previewScroll <= 0) || previewMetrics.scrollMax <= 0 : previewPage <= 0);
+  $('preview-next').disabled = !!previewError || (scrolling ? (!loop && previewScroll >= 1) || previewMetrics.scrollMax <= 0 : previewPage >= previewCount - 1);
   $('preview-scroll').disabled = previewError || previewMetrics.scrollMax <= 0;
   if (scrolling) {
     $('preview-page').textContent = `${Math.round(previewScroll * 100)}%`; setInput('preview-scroll', Math.round(previewScroll * 1000));
@@ -268,15 +271,17 @@ function updateLive() {
   const ready = metadata.renderedLiveRevision === metadata.liveRevision;
   if (ready && metadata.pageCount) liveCount = metadata.pageCount;
   if (ready) liveMetrics = {scrollMax: metadata.scrollMax || 0, viewportHeight: metadata.viewportHeight || 1};
-  const scrolling = live.style?.readingMode === 'scroll';
+  const scrolling = live.style?.readingMode === 'scroll', horizontal=live.groupLayout==='horizontal-scroll';
   $('live-detail').textContent = onAir ? (ready ? '表示前のプレビューとは、読む位置を別々に操作できます。' : '表示を更新しています…') : '下の「このお便りを配信に表示」から始められます。';
   setInput('live-reading-mode', scrolling ? 'scroll' : 'pages'); $('live-reading-mode').disabled = !onAir || !!live.groupCards;
   $('live-page').textContent = onAir ? (scrolling ? `${Math.round(live.scroll * 100)}%` : `${Math.min(live.page + 1, liveCount)} / ${liveCount}`) : '—';
-  $('live-prev').textContent = scrolling ? '↑ 上へスクロール' : '← 前のページ'; $('live-next').textContent = scrolling ? '下へスクロール ↓' : '次のページ →';
-  $('live-prev').setAttribute('aria-label', scrolling ? '表示中の文章を上へ' : '配信中の前のページ');
-  $('live-next').setAttribute('aria-label', scrolling ? '表示中の文章を下へ' : '配信中の次のページ');
-  $('live-prev').disabled = !onAir || (scrolling ? live.scroll <= 0 || liveMetrics.scrollMax <= 0 : live.page <= 0);
-  $('live-next').disabled = !onAir || (scrolling ? live.scroll >= 1 || liveMetrics.scrollMax <= 0 : live.page >= liveCount - 1);
+  $('live-prev').textContent = scrolling ? (horizontal?'← 左へスクロール':'↑ 上へスクロール') : '← 前のページ'; $('live-next').textContent = scrolling ? (horizontal?'右へスクロール →':'下へスクロール ↓') : '次のページ →';
+  $('live-prev').setAttribute('aria-label', scrolling ? (horizontal?'表示中のカードを左へ':'表示中の文章を上へ') : '配信中の前のページ');
+  $('live-next').setAttribute('aria-label', scrolling ? (horizontal?'表示中のカードを右へ':'表示中の文章を下へ') : '配信中の次のページ');
+  const groupScroll=Core.isGroupScroll(live.groupLayout),loop=groupScroll&&$('live-loop').checked;
+  $('live-loop-row').hidden=!onAir||!groupScroll;
+  $('live-prev').disabled = !onAir || (scrolling ? (!loop&&live.scroll <= 0) || liveMetrics.scrollMax <= 0 : live.page <= 0);
+  $('live-next').disabled = !onAir || (scrolling ? (!loop&&live.scroll >= 1) || liveMetrics.scrollMax <= 0 : live.page >= liveCount - 1);
   $('live-scroll-row').hidden = !onAir || !scrolling; $('live-scroll').disabled = !onAir || liveMetrics.scrollMax <= 0;
   setInput('live-scroll', Math.round(live.scroll * 1000));
   $('hide-live').disabled = !onAir; $('finish-live').disabled = !onAir;
@@ -296,6 +301,7 @@ function updateLive() {
 function render() { if (state) { renderUI(); renderInputs(); renderQueue(); updateLive(); updatePreview(); } }
 
 async function loadSource(id) {
+  $('preview-loop').checked=false; $('live-loop').checked=false;
   if ($('group-dialog').open) $('group-dialog').close();
   if ($('manager-edit-dialog').open) $('manager-edit-dialog').close();
   if ($('manager-dialog').open) $('manager-dialog').close();
@@ -378,8 +384,7 @@ $('show-letter').addEventListener('click', show);
 function changeLivePage(delta) {
   mutate(s => {
     if (s.live.style?.readingMode === 'scroll') {
-      const step = liveMetrics.scrollMax > 0 ? 0.85 * liveMetrics.viewportHeight / liveMetrics.scrollMax : 0;
-      s.live.scroll = Math.max(0, Math.min(1, s.live.scroll + delta * step));
+      s.live.scroll = Core.stepScroll(s.live.scroll,delta,liveMetrics,s.live.groupLayout,$('live-loop').checked);
     } else s.live.page = Math.max(0, Math.min(liveCount - 1, s.live.page + delta));
   }, false, false);
   flush().catch(() => {});
@@ -395,13 +400,15 @@ $('live-reading-mode').addEventListener('change', () => {
   toast(`${mode === 'scroll' ? 'スクロール' : 'ページ送り'}に切り替え、配信中のお便りを先頭から表示します。`);
 });
 for (const [id, delta] of [['preview-prev', -1], ['preview-next', 1]]) $(id).addEventListener('click', () => {
-  if (!state.draft.groupId && state.style.readingMode === 'scroll') movePreviewScroll(previewScroll + delta * (previewMetrics.scrollMax > 0 ? .85 * previewMetrics.viewportHeight / previewMetrics.scrollMax : 0));
+  if (previewScrolling()) movePreviewScroll(Core.stepScroll(previewScroll,delta,previewMetrics,preparedGroupLayout(),$('preview-loop').checked));
   else { previewPage = Math.max(0, Math.min(previewCount - 1, previewPage + delta)); updatePreview(); }
 });
+$('preview-loop').addEventListener('change',()=>{if(state)updatePreviewNavigation();});
+$('live-loop').addEventListener('change',()=>{if(state)updateLive();});
 $('preview-scroll').addEventListener('input', () => movePreviewScroll(Number($('preview-scroll').value) / 1000));
 $('preview-viewport').addEventListener('wheel', event => {
-  if (!state || state.draft.groupId || state.style.readingMode !== 'scroll' || previewMetrics.scrollMax <= 0) return;
-  event.preventDefault(); movePreviewScroll(previewScroll + event.deltaY / previewMetrics.scrollMax);
+  if (!state || !previewScrolling() || previewMetrics.scrollMax <= 0) return;
+  event.preventDefault(); movePreviewScroll(previewScroll + (preparedGroupLayout()==='horizontal-scroll' ? (event.deltaX || event.deltaY) : event.deltaY) / previewMetrics.scrollMax);
 }, {passive: false});
 $('live-scroll').addEventListener('input', () => { const position = Number($('live-scroll').value) / 1000; mutate(s => { s.live.scroll = position; }, false, false); });
 $('hide-live').addEventListener('click', () => {
@@ -522,7 +529,7 @@ function updateManagerSelection() {
   $('manager-count').textContent = `${count}件選択`;
   $('manager-summary').textContent = `全 ${total} 件 / 未紹介 ${state.items.filter(item => !item.done).length} 件` + (ids.size !== total ? ` / 表示 ${ids.size} 件` : '');
   $('manager-all').disabled = !ids.size || count === ids.size;
-  $('manager-group-create').disabled = count < 2 || count > 4 || blocked || (state.groups || []).some(g=>g.members.some(m=>managerSelection.has(m.id)));
+  $('manager-group-create').disabled = count < 2 || count > Core.MAX_GROUP_MEMBERS || blocked || (state.groups || []).some(g=>g.members.some(m=>managerSelection.has(m.id)));
   $('manager-mark-done').disabled = !count || blocked;
   $('manager-mark-pending').disabled = !count || blocked;
   $('manager-delete').disabled = !count || blocked;
@@ -543,7 +550,7 @@ function updateManagerSelection() {
 function renderManager() {
   if (!state || !$('manager-dialog').open || managerSource !== sourceId) return;
   const visibleItems = managerItems();
-  const key = JSON.stringify([visibleItems,state.items.map(item=>item.id)]);
+  const key = JSON.stringify([visibleItems,state.items.map(item=>item.id),state.groups]);
   if (key !== managerKey) {
     managerKey = key;
     const list = $('manager-list');
@@ -565,6 +572,8 @@ function renderManager() {
       row.addEventListener('dragleave', () => row.classList.remove('drop-target'));
       row.addEventListener('drop', event => { event.preventDefault(); row.classList.remove('drop-target'); if (managerDrag && !managerDrag.includes(item.id)) moveManaged('before',item.id); managerDrag = null; });
       const number = document.createElement('span'); number.className = 'manager-number'; number.textContent = String(index+1).padStart(2,'0');
+      const grouped=state.groups?.find(g=>g.members.some(m=>m.id===item.id));
+      if(grouped){const badge=document.createElement('span');badge.className='group-member-badge';badge.textContent='組'+grouped.number;badge.title=groupLabel(grouped);number.append(badge);}
       const content = document.createElement('div'); content.className = 'manager-content';
       const title = document.createElement('strong'); title.textContent = Core.label(item);
       const body = document.createElement('p'); body.textContent = item.text;
@@ -631,7 +640,7 @@ for (const [id,done] of [['manager-mark-done',true],['manager-mark-pending',fals
   }
 });
 function openManagerEdit(id=null) {
-  if (!state || blocked || managerSource!==sourceId) return;
+  if (!state || blocked || ($('manager-dialog').open && managerSource!==sourceId)) return;
   const item = id ? state.items.find(item=>item.id===id) : null;
   if (id && !item) return;
   const original = item && id === state.draft.id ? state.draft : item;
@@ -674,11 +683,52 @@ $('manager-edit-form').addEventListener('submit',event=>{
 
 
 let groupEdit=null;
-const groupLabel=g=>(g.title || 'まとめたお便り')+'（'+g.members.length+'件）';
+const groupLabel=g=>'組'+g.number+' '+(g.title || 'まとめたお便り')+'（'+g.members.length+'件）';
 function prepareGroup(id){
   previewPage=0;previewScroll=0;
   if(mutate(s=>Core.selectGroup(s,id))) toast('グループを準備しました。配信表示は変わりません。');
 }
+
+let groupReaderKey='';
+function renderGroupReader(group) {
+  const reader=$('group-reader');
+  reader.hidden=!group;
+  $('single-reply-note').hidden=!!group;$('single-editor').hidden=!!group;
+  if(!group){reader.replaceChildren();groupReaderKey='';return;}
+  const items=group.members.map(m=>state.items.find(i=>i.id===m.id)).filter(Boolean).map(i=>i.id===state.draft.id?{...i,...state.draft}:i);
+  const key=JSON.stringify([group.id,group.number,group.title,items.map(i=>[i.id,i.title,i.text])]);
+  const resize=el=>{el.style.height='auto';el.style.height=Math.min(400,Math.max(66,el.scrollHeight+4))+'px';};
+  const addNote=(parent,id,label,value,update)=>{
+    const lab=document.createElement('label');lab.htmlFor=id;lab.textContent=label;
+    const input=document.createElement('textarea');input.id=id;input.maxLength=4000;input.rows=2;input.value=value||'';input.placeholder='話したいこと・返事の下書きなど';
+    input.addEventListener('input',()=>{resize(input);update(input.value);});
+    parent.append(lab,input);return input;
+  };
+  if(key!==groupReaderKey){
+    groupReaderKey=key;reader.replaceChildren();
+    const heading=document.createElement('div');heading.className='group-reader-heading';
+    const title=document.createElement('strong');title.textContent=groupLabel(group)+' の本文';
+    const hint=document.createElement('span');hint.textContent='手元で読むための表示です。返答用メモは配信に出ません。';heading.append(title,hint);
+    const common=document.createElement('div');common.className='group-reader-common';
+    addNote(common,'group-common-reply','グループ共通の返答用メモ',group.replyNote,value=>mutate(s=>{const g=s.groups?.find(x=>x.id===group.id);if(g){if(value)g.replyNote=value;else delete g.replyNote;}},false,false));
+    const list=document.createElement('div');list.className='group-reader-list';
+    for(const [index,item] of items.entries()){
+      const card=document.createElement('article');card.className='group-reader-card';card.dataset.id=item.id;
+      const head=document.createElement('header'), title=document.createElement('strong');title.textContent=(index+1)+'. '+Core.label(item);
+      const edit=document.createElement('button');edit.type='button';edit.textContent='本文を編集';edit.addEventListener('click',()=>openManagerEdit(item.id));head.append(title,edit);
+      const body=document.createElement('div');body.className='group-reader-body';body.textContent=item.text;
+      card.append(head,body);
+      const input=addNote(card,'group-member-reply-'+index,'返答用メモ',item.replyNote,value=>mutate(s=>{const target=s.items.find(i=>i.id===item.id);for(const entry of [target,s.draft.id===item.id?s.draft:null].filter(Boolean)){if(value)entry.replyNote=value;else delete entry.replyNote;}},false,false));
+      input.className='group-member-reply';list.append(card);
+    }
+    reader.append(heading,common,list);
+    reader.querySelectorAll('textarea').forEach(resize);
+  }else{
+    const common=$('group-common-reply');if(document.activeElement!==common&&common.value!==(group.replyNote||'')){common.value=group.replyNote||'';resize(common);}
+    items.forEach((item,i)=>{const input=$('group-member-reply-'+i);if(input&&document.activeElement!==input&&input.value!==(item.replyNote||'')){input.value=item.replyNote||'';resize(input);}});
+  }
+}
+
 function renderGroups(){
   if(!state)return;
   const groups=state.groups || [], current=groups.find(g=>g.id===state.draft.groupId);
@@ -688,13 +738,14 @@ function renderGroups(){
     b.classList.toggle('selected',g.id===state.draft.groupId);b.addEventListener('click',()=>prepareGroup(g.id));return b;
   }));
   const p=$('group-preparation');p.hidden=!current;p.replaceChildren();
+  renderGroupReader(current);
   if(current){
     const label=document.createElement('strong');label.textContent=groupLabel(current);
     const layout=document.createElement('select');layout.setAttribute('aria-label','グループの配置');
-    for(const [v,t] of [['grid','2列グリッド'],['vertical','縦並び'],['horizontal','横並び']]){const o=document.createElement('option');o.value=v;o.textContent=t;layout.append(o);}
-    layout.value=current.layout;layout.addEventListener('change',()=>{previewPage=0;mutate(s=>{s.groups.find(g=>g.id===current.id).layout=layout.value;},true);});
+    for(const [v,t] of [['grid','自動グリッド'],['vertical','縦並び'],['horizontal','横並び'],['vertical-scroll','縦スクロール'],['horizontal-scroll','横スクロール']]){const o=document.createElement('option');o.value=v;o.textContent=t;layout.append(o);}
+    layout.value=current.layout;layout.addEventListener('change',()=>{previewPage=0;previewScroll=0;mutate(s=>{s.groups.find(g=>g.id===current.id).layout=layout.value;},true);});
     const single=document.createElement('button');single.textContent='個別表示に戻す';single.addEventListener('click',()=>{previewPage=0;mutate(s=>{delete s.draft.groupId;});});
-    const info=document.createElement('span');info.textContent='ページ送り・固定高さ／本文・返答メモは先頭のお便り';
+    const info=document.createElement('span');info.textContent=(Core.isGroupScroll(current.layout)?'カードをスクロール・固定枠':'ページ送り・固定高さ')+'／本文と返答用メモは下に全件表示';
     p.append(label,layout,single,info);
   }
   const m=$('manager-groups');m.hidden=!groups.length;
@@ -710,7 +761,7 @@ function openGroup(id=null){
   if(!state||blocked)return;
   const g=id?state.groups?.find(x=>x.id===id):null;
   const members=g?g.members.map(m=>m.id):state.items.filter(i=>managerSelection.has(i.id)).map(i=>i.id);
-  if(members.length<2||members.length>4)return;
+  if(members.length<2||members.length>Core.MAX_GROUP_MEMBERS)return;
   groupEdit={id,source:sourceId,members,original:g?JSON.stringify(g):null};
   $('group-title').value=g?.title || '';$('group-layout').value=g?.layout || 'grid';$('group-error').textContent='';
   $('group-dialog').showModal();renderGroupEditor();
@@ -718,7 +769,8 @@ function openGroup(id=null){
 function renderGroupEditor(){
   if(!groupEdit||!state)return;
   const members=groupEdit.members,layout=$('group-layout').value;
-  const preview=$('group-layout-preview');preview.style.gridTemplateColumns='repeat('+(layout==='horizontal'?members.length:layout==='vertical'?1:2)+',1fr)';
+  const preview=$('group-layout-preview');preview.style.gridTemplateColumns='repeat('+(Core.groupColumns(layout,members.length))+',1fr)';
+  preview.dataset.layout=layout;
   preview.replaceChildren(...members.map((_,i)=>{const e=document.createElement('span');e.textContent=i+1;return e;}));
   $('group-members').replaceChildren(...members.map((id,i)=>{
     const li=document.createElement('li'),label=document.createElement('span'),item=state.items.find(x=>x.id===id);
@@ -737,8 +789,9 @@ $('group-form').addEventListener('submit',event=>{
   if(members.some(id=>!state.items.some(i=>i.id===id)) || (state.groups||[]).some(g=>g.id!==id&&g.members.some(m=>members.includes(m.id))) || (id && JSON.stringify(state.groups?.find(g=>g.id===id))!==original)){
     $('group-error').textContent='一覧が変わりました。閉じて開き直してください。';return;
   }
-  const g={id:id||Core.uid(),title:$('group-title').value,layout:$('group-layout').value,members:members.map(id=>({id}))};
-  if(mutate(s=>{s.groups=(s.groups||[]).filter(x=>x.id!==g.id);s.groups.push(g);if(s.draft.groupId===g.id)Core.selectGroup(s,g.id);},true)){
+  const existing=state.groups?.find(g=>g.id===id);
+  const g={...existing,id:id||Core.uid(),number:existing?.number || Math.max(0,...(state.groups||[]).map(g=>g.number))+1,title:$('group-title').value,layout:$('group-layout').value,members:members.map(id=>({id}))};
+  if(mutate(s=>{s.groups=s.groups||[];const index=s.groups.findIndex(x=>x.id===g.id);if(index<0)s.groups.push(g);else s.groups[index]=g;if(s.draft.groupId===g.id)Core.selectGroup(s,g.id);},true)){
     $('group-dialog').close();toast('グループを保存しました。');flush().catch(()=>{});
   }
 });
