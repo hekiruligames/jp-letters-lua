@@ -66,7 +66,8 @@ export function normalizeState(input = {}) {
     let id = typeof item.id === 'string' && /^[\w-]{1,120}$/.test(item.id) ? item.id : uid();
     if (ids.has(id)) id = uid();
     ids.add(id);
-    items.push({ id, title: text(item.title).slice(0, 100), text: content, done: !!item.done });
+    const replyNote = text(item.replyNote).slice(0, 4000);
+    items.push({ id, title: text(item.title).slice(0, 100), text: content, done: !!item.done, ...(replyNote ? {replyNote} : {}) });
   }
   if (items.length > 300) throw new Error('お便りは300件まで登録できます。');
   const style = normalizeStyle(input.style), rawDraft = input.draft || {}, rawLive = input.live || {};
@@ -74,7 +75,7 @@ export function normalizeState(input = {}) {
     throw new Error('1件のお便りは12,000文字以内にしてください。');
   }
   const result = {version: 1, items, selectedId: ids.has(input.selectedId) ? input.selectedId : null,
-    draft: {id: ids.has(rawDraft.id) ? rawDraft.id : null, title: text(rawDraft.title).slice(0, 100), text: text(rawDraft.text)},
+    draft: {id: ids.has(rawDraft.id) ? rawDraft.id : null, title: text(rawDraft.title).slice(0, 100), text: text(rawDraft.text), ...(text(rawDraft.replyNote) ? {replyNote: text(rawDraft.replyNote).slice(0,4000)} : {})},
     style, ui: normalizeUI(input.ui), live: {visible: !!rawLive.visible && !!text(rawLive.text).trim(), id: rawLive.id || null,
       title: text(rawLive.title).slice(0, 100), text: text(rawLive.text),
       page: Math.round(bounded(rawLive.page, 0, 0, 9999)), scroll: bounded(rawLive.scroll, 0, 0, 1),
@@ -91,10 +92,10 @@ export function saveDraft(state) {
     throw new Error('URLからの取得には未対応です。マシュマロの本文を貼り付けてください。');
   }
   const existing = state.items.find(item => item.id === state.draft.id);
-  if (existing) { existing.text = state.draft.text; existing.title = state.draft.title; }
+  if (existing) { existing.text = state.draft.text; existing.title = state.draft.title; if (state.draft.replyNote) existing.replyNote = state.draft.replyNote; else delete existing.replyNote; }
   else {
     if (state.items.length >= 300) throw new Error('お便りは300件まで登録できます。');
-    const item = {id: uid(), title: state.draft.title, text: state.draft.text, done: false};
+    const item = {id: uid(), title: state.draft.title, text: state.draft.text, done: false, ...(state.draft.replyNote ? {replyNote:state.draft.replyNote} : {})};
     state.items.push(item); state.draft.id = item.id;
   }
   state.selectedId = state.draft.id;
@@ -105,7 +106,7 @@ export function selectItem(state, id) {
   const item = state.items.find(item => item.id === id);
   if (!item) return state;
   state.selectedId = id;
-  state.draft = {id, text: item.text, title: item.title};
+  state.draft = {id, text: item.text, title: item.title, ...(item.replyNote ? {replyNote:item.replyNote} : {})};
   return state;
 }
 export function newDraft(state) {
