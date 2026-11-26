@@ -404,3 +404,7 @@ button.advance-primary:disabled {background:var(--panel); color:var(--muted); bo
 .manager-number .group-member-badge {display:table;margin-top:4px;padding:1px 3px;}
 .group-reader textarea.group-member-reply {height:76px;}
 @media(max-width:680px){.group-reader {padding:10px;}.group-reader-body{font-size:15px;}}
+
+#group-layout-preview[data-layout="vertical-scroll"] {max-height:130px;overflow-y:auto;scrollbar-width:thin;}
+#group-layout-preview[data-layout="horizontal-scroll"] {grid-auto-flow:column;grid-template-columns:none!important;grid-auto-columns:70px;overflow-x:auto;scrollbar-width:thin;min-height:46px;}
+.letter-group-track > .letter-frame {flex:0 0 auto;}
