@@ -130,7 +130,7 @@ function renderInputs() {
   setInput('frameBackgroundOpacity', Math.round(state.style.frameBackgroundOpacity * 100));
   $('frame-opacity-value').textContent = `${Math.round(state.style.frameBackgroundOpacity * 100)}%`;
   $('frameBackgroundOpacity').style.setProperty('--range-progress', `${state.style.frameBackgroundOpacity * 100}%`);
-  setInput('readingMode', state.draft.groupId ? 'pages' : state.style.readingMode); $('readingMode').disabled=!!state.draft.groupId; renderFonts();
+  setInput('readingMode', previewScrolling() ? 'scroll' : 'pages'); $('readingMode').disabled=!!state.draft.groupId; renderFonts();
   $('auto-height').setAttribute('aria-pressed', String(state.style.autoHeight));
   $('height-label').textContent = state.style.autoHeight ? '最大の高さ' : '枠の高さ';
   setInput('quick-width', state.style.width); setInput('quick-height', state.style.height);
@@ -225,13 +225,13 @@ async function updatePreview() {
     previewError = '';
     previewMetrics = result; previewStyle = result.style; scalePreview();
     $('preview-size').textContent = `${result.style.width} × ${result.style.height}${style.autoHeight ? '（自動）' : ''}`;
-    const scrolling = result.style.readingMode === 'scroll'; $('preview-scroll').hidden = !scrolling;
-    $('preview-prev').textContent = scrolling ? '↑ 上へ' : '← 前'; $('preview-next').textContent = scrolling ? '下へ ↓' : '次 →';
-    $('preview-prev').setAttribute('aria-label', scrolling ? '準備中の文章を上へ' : '準備中の前のページ');
-    $('preview-next').setAttribute('aria-label', scrolling ? '準備中の文章を下へ' : '準備中の次のページ');
+    const scrolling = result.style.readingMode === 'scroll', horizontal = draft.groupLayout === 'horizontal-scroll'; $('preview-scroll').hidden = !scrolling;
+    $('preview-prev').textContent = scrolling ? (horizontal?'← 左へ':'↑ 上へ') : '← 前'; $('preview-next').textContent = scrolling ? (horizontal?'右へ →':'下へ ↓') : '次 →';
+    $('preview-prev').setAttribute('aria-label', scrolling ? (horizontal?'準備中のカードを左へ':'準備中の文章を上へ') : '準備中の前のページ');
+    $('preview-next').setAttribute('aria-label', scrolling ? (horizontal?'準備中のカードを右へ':'準備中の文章を下へ') : '準備中の次のページ');
     $('preview-page').textContent = scrolling ? `${Math.round(previewScroll * 100)}%` : `${previewPage + 1} / ${previewCount}`;
     setInput('preview-scroll', Math.round(previewScroll * 1000));
-    $('preview-info').textContent = scrolling ? (result.scrollMax > 0 ? '全文を上下にスクロールできます。' : '全文がこの枠に収まります。') :
+    $('preview-info').textContent = scrolling ? (result.scrollMax > 0 ? (horizontal?'カードを左右にスクロールできます。':draft.groupCards?'カードを上下にスクロールできます。':'全文を上下にスクロールできます。') : '全文がこの枠に収まります。') :
       previewCount > 1 ? `全${previewCount}ページ。ここでは表示前の内容を確認できます。` : 'この内容は1ページに収まります。';
     $('preview-info').classList.remove('error'); $('show-letter').disabled = false;
   } catch (error) {
@@ -242,8 +242,10 @@ async function updatePreview() {
   }
   updatePreviewNavigation();
 }
+function preparedGroupLayout(){return state?.groups?.find(g=>g.id===state.draft.groupId)?.layout;}
+function previewScrolling(){return state?.draft.groupId ? Core.isGroupScroll(preparedGroupLayout()) : state?.style.readingMode==='scroll';}
 function updatePreviewNavigation() {
-  const scrolling = !state.draft.groupId && state.style.readingMode === 'scroll';
+  const scrolling = previewScrolling();
   $('preview-prev').disabled = previewError || (scrolling ? previewScroll <= 0 || previewMetrics.scrollMax <= 0 : previewPage <= 0);
   $('preview-next').disabled = previewError || (scrolling ? previewScroll >= 1 || previewMetrics.scrollMax <= 0 : previewPage >= previewCount - 1);
   $('preview-scroll').disabled = previewError || previewMetrics.scrollMax <= 0;
@@ -268,13 +270,13 @@ function updateLive() {
   const ready = metadata.renderedLiveRevision === metadata.liveRevision;
   if (ready && metadata.pageCount) liveCount = metadata.pageCount;
   if (ready) liveMetrics = {scrollMax: metadata.scrollMax || 0, viewportHeight: metadata.viewportHeight || 1};
-  const scrolling = live.style?.readingMode === 'scroll';
+  const scrolling = live.style?.readingMode === 'scroll', horizontal=live.groupLayout==='horizontal-scroll';
   $('live-detail').textContent = onAir ? (ready ? '表示前のプレビューとは、読む位置を別々に操作できます。' : '表示を更新しています…') : '下の「このお便りを配信に表示」から始められます。';
   setInput('live-reading-mode', scrolling ? 'scroll' : 'pages'); $('live-reading-mode').disabled = !onAir || !!live.groupCards;
   $('live-page').textContent = onAir ? (scrolling ? `${Math.round(live.scroll * 100)}%` : `${Math.min(live.page + 1, liveCount)} / ${liveCount}`) : '—';
-  $('live-prev').textContent = scrolling ? '↑ 上へスクロール' : '← 前のページ'; $('live-next').textContent = scrolling ? '下へスクロール ↓' : '次のページ →';
-  $('live-prev').setAttribute('aria-label', scrolling ? '表示中の文章を上へ' : '配信中の前のページ');
-  $('live-next').setAttribute('aria-label', scrolling ? '表示中の文章を下へ' : '配信中の次のページ');
+  $('live-prev').textContent = scrolling ? (horizontal?'← 左へスクロール':'↑ 上へスクロール') : '← 前のページ'; $('live-next').textContent = scrolling ? (horizontal?'右へスクロール →':'下へスクロール ↓') : '次のページ →';
+  $('live-prev').setAttribute('aria-label', scrolling ? (horizontal?'表示中のカードを左へ':'表示中の文章を上へ') : '配信中の前のページ');
+  $('live-next').setAttribute('aria-label', scrolling ? (horizontal?'表示中のカードを右へ':'表示中の文章を下へ') : '配信中の次のページ');
   $('live-prev').disabled = !onAir || (scrolling ? live.scroll <= 0 || liveMetrics.scrollMax <= 0 : live.page <= 0);
   $('live-next').disabled = !onAir || (scrolling ? live.scroll >= 1 || liveMetrics.scrollMax <= 0 : live.page >= liveCount - 1);
   $('live-scroll-row').hidden = !onAir || !scrolling; $('live-scroll').disabled = !onAir || liveMetrics.scrollMax <= 0;
@@ -395,13 +397,13 @@ $('live-reading-mode').addEventListener('change', () => {
   toast(`${mode === 'scroll' ? 'スクロール' : 'ページ送り'}に切り替え、配信中のお便りを先頭から表示します。`);
 });
 for (const [id, delta] of [['preview-prev', -1], ['preview-next', 1]]) $(id).addEventListener('click', () => {
-  if (!state.draft.groupId && state.style.readingMode === 'scroll') movePreviewScroll(previewScroll + delta * (previewMetrics.scrollMax > 0 ? .85 * previewMetrics.viewportHeight / previewMetrics.scrollMax : 0));
+  if (previewScrolling()) movePreviewScroll(previewScroll + delta * (previewMetrics.scrollMax > 0 ? .85 * previewMetrics.viewportHeight / previewMetrics.scrollMax : 0));
   else { previewPage = Math.max(0, Math.min(previewCount - 1, previewPage + delta)); updatePreview(); }
 });
 $('preview-scroll').addEventListener('input', () => movePreviewScroll(Number($('preview-scroll').value) / 1000));
 $('preview-viewport').addEventListener('wheel', event => {
-  if (!state || state.draft.groupId || state.style.readingMode !== 'scroll' || previewMetrics.scrollMax <= 0) return;
-  event.preventDefault(); movePreviewScroll(previewScroll + event.deltaY / previewMetrics.scrollMax);
+  if (!state || !previewScrolling() || previewMetrics.scrollMax <= 0) return;
+  event.preventDefault(); movePreviewScroll(previewScroll + (preparedGroupLayout()==='horizontal-scroll' ? (event.deltaX || event.deltaY) : event.deltaY) / previewMetrics.scrollMax);
 }, {passive: false});
 $('live-scroll').addEventListener('input', () => { const position = Number($('live-scroll').value) / 1000; mutate(s => { s.live.scroll = position; }, false, false); });
 $('hide-live').addEventListener('click', () => {
@@ -735,10 +737,10 @@ function renderGroups(){
   if(current){
     const label=document.createElement('strong');label.textContent=groupLabel(current);
     const layout=document.createElement('select');layout.setAttribute('aria-label','グループの配置');
-    for(const [v,t] of [['grid','自動グリッド'],['vertical','縦並び'],['horizontal','横並び']]){const o=document.createElement('option');o.value=v;o.textContent=t;layout.append(o);}
-    layout.value=current.layout;layout.addEventListener('change',()=>{previewPage=0;mutate(s=>{s.groups.find(g=>g.id===current.id).layout=layout.value;},true);});
+    for(const [v,t] of [['grid','自動グリッド'],['vertical','縦並び'],['horizontal','横並び'],['vertical-scroll','縦スクロール'],['horizontal-scroll','横スクロール']]){const o=document.createElement('option');o.value=v;o.textContent=t;layout.append(o);}
+    layout.value=current.layout;layout.addEventListener('change',()=>{previewPage=0;previewScroll=0;mutate(s=>{s.groups.find(g=>g.id===current.id).layout=layout.value;},true);});
     const single=document.createElement('button');single.textContent='個別表示に戻す';single.addEventListener('click',()=>{previewPage=0;mutate(s=>{delete s.draft.groupId;});});
-    const info=document.createElement('span');info.textContent='ページ送り・固定高さ／本文と返答用メモは下に全件表示';
+    const info=document.createElement('span');info.textContent=(Core.isGroupScroll(current.layout)?'カードをスクロール・固定枠':'ページ送り・固定高さ')+'／本文と返答用メモは下に全件表示';
     p.append(label,layout,single,info);
   }
   const m=$('manager-groups');m.hidden=!groups.length;
@@ -763,6 +765,7 @@ function renderGroupEditor(){
   if(!groupEdit||!state)return;
   const members=groupEdit.members,layout=$('group-layout').value;
   const preview=$('group-layout-preview');preview.style.gridTemplateColumns='repeat('+(Core.groupColumns(layout,members.length))+',1fr)';
+  preview.dataset.layout=layout;
   preview.replaceChildren(...members.map((_,i)=>{const e=document.createElement('span');e.textContent=i+1;return e;}));
   $('group-members').replaceChildren(...members.map((id,i)=>{
     const li=document.createElement('li'),label=document.createElement('span'),item=state.items.find(x=>x.id===id);
