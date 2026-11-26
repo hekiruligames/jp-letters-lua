@@ -177,7 +177,7 @@ function renderQueue() {
     const index = document.createElement('span'); index.className = 'item-index'; index.textContent = String(state.items.indexOf(item) + 1).padStart(2, '0');
     const title = document.createElement('strong'); title.textContent = Core.label(item); heading.append(index, title);
     const grouped = state.groups?.find(g=>g.members.some(m=>m.id===item.id));
-    if(grouped){const badge=document.createElement('span');badge.className='item-done';badge.textContent='組';heading.append(badge);}
+    if(grouped){const badge=document.createElement('span');badge.className='group-member-badge';badge.textContent='組'+grouped.number;badge.title=groupLabel(grouped);heading.append(badge);}
     if (item.done) { const badge = document.createElement('span'); badge.className = 'item-done'; badge.textContent = '✓ 済'; heading.append(badge); }
     const snippet = document.createElement('span'); snippet.className = 'item-snippet'; snippet.textContent = item.text;
     button.append(heading, snippet); button.addEventListener('click', () => { previewPage = 0; previewScroll = 0; mutate(s => Core.selectItem(s, item.id)); });
@@ -522,7 +522,7 @@ function updateManagerSelection() {
   $('manager-count').textContent = `${count}件選択`;
   $('manager-summary').textContent = `全 ${total} 件 / 未紹介 ${state.items.filter(item => !item.done).length} 件` + (ids.size !== total ? ` / 表示 ${ids.size} 件` : '');
   $('manager-all').disabled = !ids.size || count === ids.size;
-  $('manager-group-create').disabled = count < 2 || count > 4 || blocked || (state.groups || []).some(g=>g.members.some(m=>managerSelection.has(m.id)));
+  $('manager-group-create').disabled = count < 2 || count > Core.MAX_GROUP_MEMBERS || blocked || (state.groups || []).some(g=>g.members.some(m=>managerSelection.has(m.id)));
   $('manager-mark-done').disabled = !count || blocked;
   $('manager-mark-pending').disabled = !count || blocked;
   $('manager-delete').disabled = !count || blocked;
@@ -543,7 +543,7 @@ function updateManagerSelection() {
 function renderManager() {
   if (!state || !$('manager-dialog').open || managerSource !== sourceId) return;
   const visibleItems = managerItems();
-  const key = JSON.stringify([visibleItems,state.items.map(item=>item.id)]);
+  const key = JSON.stringify([visibleItems,state.items.map(item=>item.id),state.groups]);
   if (key !== managerKey) {
     managerKey = key;
     const list = $('manager-list');
@@ -565,6 +565,8 @@ function renderManager() {
       row.addEventListener('dragleave', () => row.classList.remove('drop-target'));
       row.addEventListener('drop', event => { event.preventDefault(); row.classList.remove('drop-target'); if (managerDrag && !managerDrag.includes(item.id)) moveManaged('before',item.id); managerDrag = null; });
       const number = document.createElement('span'); number.className = 'manager-number'; number.textContent = String(index+1).padStart(2,'0');
+      const grouped=state.groups?.find(g=>g.members.some(m=>m.id===item.id));
+      if(grouped){const badge=document.createElement('span');badge.className='group-member-badge';badge.textContent='組'+grouped.number;badge.title=groupLabel(grouped);number.append(badge);}
       const content = document.createElement('div'); content.className = 'manager-content';
       const title = document.createElement('strong'); title.textContent = Core.label(item);
       const body = document.createElement('p'); body.textContent = item.text;
@@ -631,7 +633,7 @@ for (const [id,done] of [['manager-mark-done',true],['manager-mark-pending',fals
   }
 });
 function openManagerEdit(id=null) {
-  if (!state || blocked || managerSource!==sourceId) return;
+  if (!state || blocked || ($('manager-dialog').open && managerSource!==sourceId)) return;
   const item = id ? state.items.find(item=>item.id===id) : null;
   if (id && !item) return;
   const original = item && id === state.draft.id ? state.draft : item;
@@ -674,11 +676,52 @@ $('manager-edit-form').addEventListener('submit',event=>{
 
 
 let groupEdit=null;
-const groupLabel=g=>(g.title || 'まとめたお便り')+'（'+g.members.length+'件）';
+const groupLabel=g=>'組'+g.number+' '+(g.title || 'まとめたお便り')+'（'+g.members.length+'件）';
 function prepareGroup(id){
   previewPage=0;previewScroll=0;
   if(mutate(s=>Core.selectGroup(s,id))) toast('グループを準備しました。配信表示は変わりません。');
 }
+
+let groupReaderKey='';
+function renderGroupReader(group) {
+  const reader=$('group-reader');
+  reader.hidden=!group;
+  $('single-reply-note').hidden=!!group;$('single-editor').hidden=!!group;
+  if(!group){reader.replaceChildren();groupReaderKey='';return;}
+  const items=group.members.map(m=>state.items.find(i=>i.id===m.id)).filter(Boolean).map(i=>i.id===state.draft.id?{...i,...state.draft}:i);
+  const key=JSON.stringify([group.id,group.number,group.title,items.map(i=>[i.id,i.title,i.text])]);
+  const resize=el=>{el.style.height='auto';el.style.height=Math.min(400,Math.max(66,el.scrollHeight+4))+'px';};
+  const addNote=(parent,id,label,value,update)=>{
+    const lab=document.createElement('label');lab.htmlFor=id;lab.textContent=label;
+    const input=document.createElement('textarea');input.id=id;input.maxLength=4000;input.rows=2;input.value=value||'';input.placeholder='話したいこと・返事の下書きなど';
+    input.addEventListener('input',()=>{resize(input);update(input.value);});
+    parent.append(lab,input);return input;
+  };
+  if(key!==groupReaderKey){
+    groupReaderKey=key;reader.replaceChildren();
+    const heading=document.createElement('div');heading.className='group-reader-heading';
+    const title=document.createElement('strong');title.textContent=groupLabel(group)+' の本文';
+    const hint=document.createElement('span');hint.textContent='手元で読むための表示です。返答用メモは配信に出ません。';heading.append(title,hint);
+    const common=document.createElement('div');common.className='group-reader-common';
+    addNote(common,'group-common-reply','グループ共通の返答用メモ',group.replyNote,value=>mutate(s=>{const g=s.groups?.find(x=>x.id===group.id);if(g){if(value)g.replyNote=value;else delete g.replyNote;}},false,false));
+    const list=document.createElement('div');list.className='group-reader-list';
+    for(const [index,item] of items.entries()){
+      const card=document.createElement('article');card.className='group-reader-card';card.dataset.id=item.id;
+      const head=document.createElement('header'), title=document.createElement('strong');title.textContent=(index+1)+'. '+Core.label(item);
+      const edit=document.createElement('button');edit.type='button';edit.textContent='本文を編集';edit.addEventListener('click',()=>openManagerEdit(item.id));head.append(title,edit);
+      const body=document.createElement('div');body.className='group-reader-body';body.textContent=item.text;
+      card.append(head,body);
+      const input=addNote(card,'group-member-reply-'+index,'返答用メモ',item.replyNote,value=>mutate(s=>{const target=s.items.find(i=>i.id===item.id);for(const entry of [target,s.draft.id===item.id?s.draft:null].filter(Boolean)){if(value)entry.replyNote=value;else delete entry.replyNote;}},false,false));
+      input.className='group-member-reply';list.append(card);
+    }
+    reader.append(heading,common,list);
+    reader.querySelectorAll('textarea').forEach(resize);
+  }else{
+    const common=$('group-common-reply');if(document.activeElement!==common&&common.value!==(group.replyNote||'')){common.value=group.replyNote||'';resize(common);}
+    items.forEach((item,i)=>{const input=$('group-member-reply-'+i);if(input&&document.activeElement!==input&&input.value!==(item.replyNote||'')){input.value=item.replyNote||'';resize(input);}});
+  }
+}
+
 function renderGroups(){
   if(!state)return;
   const groups=state.groups || [], current=groups.find(g=>g.id===state.draft.groupId);
@@ -688,13 +731,14 @@ function renderGroups(){
     b.classList.toggle('selected',g.id===state.draft.groupId);b.addEventListener('click',()=>prepareGroup(g.id));return b;
   }));
   const p=$('group-preparation');p.hidden=!current;p.replaceChildren();
+  renderGroupReader(current);
   if(current){
     const label=document.createElement('strong');label.textContent=groupLabel(current);
     const layout=document.createElement('select');layout.setAttribute('aria-label','グループの配置');
-    for(const [v,t] of [['grid','2列グリッド'],['vertical','縦並び'],['horizontal','横並び']]){const o=document.createElement('option');o.value=v;o.textContent=t;layout.append(o);}
+    for(const [v,t] of [['grid','自動グリッド'],['vertical','縦並び'],['horizontal','横並び']]){const o=document.createElement('option');o.value=v;o.textContent=t;layout.append(o);}
     layout.value=current.layout;layout.addEventListener('change',()=>{previewPage=0;mutate(s=>{s.groups.find(g=>g.id===current.id).layout=layout.value;},true);});
     const single=document.createElement('button');single.textContent='個別表示に戻す';single.addEventListener('click',()=>{previewPage=0;mutate(s=>{delete s.draft.groupId;});});
-    const info=document.createElement('span');info.textContent='ページ送り・固定高さ／本文・返答メモは先頭のお便り';
+    const info=document.createElement('span');info.textContent='ページ送り・固定高さ／本文と返答用メモは下に全件表示';
     p.append(label,layout,single,info);
   }
   const m=$('manager-groups');m.hidden=!groups.length;
@@ -710,7 +754,7 @@ function openGroup(id=null){
   if(!state||blocked)return;
   const g=id?state.groups?.find(x=>x.id===id):null;
   const members=g?g.members.map(m=>m.id):state.items.filter(i=>managerSelection.has(i.id)).map(i=>i.id);
-  if(members.length<2||members.length>4)return;
+  if(members.length<2||members.length>Core.MAX_GROUP_MEMBERS)return;
   groupEdit={id,source:sourceId,members,original:g?JSON.stringify(g):null};
   $('group-title').value=g?.title || '';$('group-layout').value=g?.layout || 'grid';$('group-error').textContent='';
   $('group-dialog').showModal();renderGroupEditor();
@@ -718,7 +762,7 @@ function openGroup(id=null){
 function renderGroupEditor(){
   if(!groupEdit||!state)return;
   const members=groupEdit.members,layout=$('group-layout').value;
-  const preview=$('group-layout-preview');preview.style.gridTemplateColumns='repeat('+(layout==='horizontal'?members.length:layout==='vertical'?1:2)+',1fr)';
+  const preview=$('group-layout-preview');preview.style.gridTemplateColumns='repeat('+(Core.groupColumns(layout,members.length))+',1fr)';
   preview.replaceChildren(...members.map((_,i)=>{const e=document.createElement('span');e.textContent=i+1;return e;}));
   $('group-members').replaceChildren(...members.map((id,i)=>{
     const li=document.createElement('li'),label=document.createElement('span'),item=state.items.find(x=>x.id===id);
@@ -737,8 +781,9 @@ $('group-form').addEventListener('submit',event=>{
   if(members.some(id=>!state.items.some(i=>i.id===id)) || (state.groups||[]).some(g=>g.id!==id&&g.members.some(m=>members.includes(m.id))) || (id && JSON.stringify(state.groups?.find(g=>g.id===id))!==original)){
     $('group-error').textContent='一覧が変わりました。閉じて開き直してください。';return;
   }
-  const g={id:id||Core.uid(),title:$('group-title').value,layout:$('group-layout').value,members:members.map(id=>({id}))};
-  if(mutate(s=>{s.groups=(s.groups||[]).filter(x=>x.id!==g.id);s.groups.push(g);if(s.draft.groupId===g.id)Core.selectGroup(s,g.id);},true)){
+  const existing=state.groups?.find(g=>g.id===id);
+  const g={...existing,id:id||Core.uid(),number:existing?.number || Math.max(0,...(state.groups||[]).map(g=>g.number))+1,title:$('group-title').value,layout:$('group-layout').value,members:members.map(id=>({id}))};
+  if(mutate(s=>{s.groups=s.groups||[];const index=s.groups.findIndex(x=>x.id===g.id);if(index<0)s.groups.push(g);else s.groups[index]=g;if(s.draft.groupId===g.id)Core.selectGroup(s,g.id);},true)){
     $('group-dialog').close();toast('グループを保存しました。');flush().catch(()=>{});
   }
 });
